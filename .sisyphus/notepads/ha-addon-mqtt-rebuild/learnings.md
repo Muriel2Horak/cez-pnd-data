@@ -90,3 +90,85 @@
 - Deterministic: `cez_pnd/{meter_id}/{key}/state` — no UUIDs or timestamps
 - Three sensors: consumption (+A), production (-A), reactive (Rv)
 - All three share a single availability topic per meter
+
+## Task 6: Runtime Orchestrator
+
+### Architecture
+- `Orchestrator` class coordinates auth → fetch → parse → publish cycle
+- `OrchestratorConfig` dataclass: `poll_interval_seconds` (default 900), `max_retries` (default 3), `retry_base_delay_seconds`, `meter_id`
+- `run_loop()` is the long-running entry point; `run_once()` is a single cycle (testable)
+- Loop runs until `asyncio.CancelledError` — standard asyncio shutdown pattern
+
+### Session expiry re-auth pattern
+- `SessionExpiredError` custom exception raised by fetcher on HTTP 401
+- On expiry: re-auth once via `auth.ensure_session()`, retry fetch with new cookies
+- `_reauthed` flag prevents infinite re-auth loops — at most 2 auth attempts per cycle
+- If re-auth itself fails, cycle is aborted gracefully (logged, not raised)
+
+### Bounded retry with backoff
+- Transient errors (ConnectionError, etc.) retried up to `max_retries`
+- Exponential backoff: `base_delay * 2^(attempt-1)`
+- After exhausting retries, cycle is aborted with ERROR log
+- Session expiry is handled separately from transient retry (different code path)
+
+### Error sentinel pattern
+- `CEZ_FETCH_ERROR`, `MQTT_PUBLISH_ERROR`, `SESSION_EXPIRED_ERROR` string constants
+- Included in log messages as `[SENTINEL]` prefix for structured log filtering
+- Not Python exceptions — just identifiers for log aggregation
+
+### MQTT failure isolation
+- MQTT publish failures are caught and logged but never crash the orchestrator
+- Next cycle retries MQTT publish normally — no special recovery needed
+- This matches HA add-on resilience expectations
+
+### Integration with parser
+- `CezDataParser(payload).get_latest_reading_dict()` returns flat dict
+- Orchestrator maps `consumption_kw` → `consumption` key for MqttPublisher
+- `None` readings (no data) skip publish entirely
+
+### Testing patterns
+- Fast tests: `retry_base_delay_seconds=0.01` avoids real backoff delays
+- Scheduler loop tests: use short `poll_interval_seconds` (0.05-0.1s) + `asyncio.sleep` + cancel
+- `FakeAuthClient`, `FakeFetcher`, `FakeMqttPublisher` stubs keep tests isolated
+- `caplog` fixture validates log messages contain expected error keywords
+
+## Task 8: E2E Verification & Release Documentation
+
+### Lazy import pattern for Playwright
+- Module-level `from playwright.async_api import async_playwright` prevents tests from running without Playwright installed
+- Solution: move import inside `_login_via_playwright()` method body
+- Tests inject a mock `login_runner` callable, bypassing Playwright entirely
+- Production code imports Playwright only when actually executing browser automation
+
+### Bash `set -e` + arithmetic gotcha
+- `((var++))` evaluates to the OLD value; when `var=0`, `((0++))` returns exit code 1
+- `set -e` treats this as a failure and aborts the script
+- Fix: use `var=$((var + 1))` instead of `((var++))` in scripts with `set -e`
+
+### E2E smoke test design
+- Full pipeline test: inject fake `login_runner` → parse real sample data → verify MQTT calls
+- 4 test classes: pipeline smoke, discovery schema, numeric states, session persistence
+- Uses `evidence/pnd-playwright-data.json` (96-record sample) as ground truth
+- Tests verify both discovery config topics AND state topics are published correctly
+
+### Negative-path testing
+- 6 tests covering: auth failure (no stale publish), missing options, empty options, expired session
+- Critical invariant: auth failure must NEVER publish stale MQTT state
+- `FakeMqttPublisher.publish_state` call count = 0 when auth fails
+- Missing/empty options raise `ValueError` before any MQTT connection
+
+### README architecture
+- README rewritten in Czech (project language) for add-on-only architecture
+- 4-step installation: install broker → install add-on → set credentials → start
+- No `custom_components/` references in primary path
+- Full troubleshooting matrix: auth failure, DIP timeout, MQTT unavailable, missing sensors, session expiry, empty payload
+
+### Smoke script verification
+- Bash script with 8 steps, 22 individual checks
+- Validates: file presence, JSON validity, unit tests, E2E tests, negative tests, discovery schema, parser output, README content
+- All checks must pass for script to exit 0
+- Provides evidence for release readiness
+
+### pyproject.toml fix
+- Line 83 had unterminated string: `output = "coverage.xml` → `output = "coverage.xml"`
+- Caused pytest config parsing to fail silently with some pytest versions
