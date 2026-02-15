@@ -1,0 +1,18 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.3, pytest-9.0.2, pluggy-1.6.0 -- /opt/homebrew/opt/python@3.14/bin/python3.14
+cachedir: .pytest_cache
+rootdir: /Users/martinhorak/Projects/cez-pnd
+plugins: asyncio-1.3.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 30 items / 22 deselected / 8 selected
+
+tests/test_mqtt_discovery.py::TestDiscoveryPayload::test_state_topic_present PASSED [ 12%]
+tests/test_mqtt_discovery.py::TestDiscoveryPayload::test_state_class_present PASSED [ 25%]
+tests/test_mqtt_discovery.py::TestTopicNaming::test_state_topic_format PASSED [ 37%]
+tests/test_mqtt_discovery.py::TestStatePublishing::test_publish_state_sends_numeric_values PASSED [ 50%]
+tests/test_mqtt_discovery.py::TestStatePublishing::test_publish_state_retains_values PASSED [ 62%]
+tests/test_mqtt_discovery.py::TestStatePublishing::test_publish_state_ignores_unknown_keys PASSED [ 75%]
+tests/test_mqtt_discovery.py::TestStatePublishing::test_publish_state_handles_none_values PASSED [ 87%]
+tests/test_mqtt_discovery.py::TestStatePublishing::test_full_cycle_discovery_then_state PASSED [100%]
+
+======================= 8 passed, 22 deselected in 0.03s =======================
