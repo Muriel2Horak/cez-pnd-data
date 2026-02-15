@@ -1,0 +1,22 @@
+name: CEZ PND
+version: "0.1.0"
+slug: cez-pnd
+description: "CEZ PND data integration for Home Assistant via MQTT Discovery"
+arch:
+  - amd64
+  - aarch64
+  - armv7
+startup: services
+boot: auto
+services:
+  - "mqtt:need"
+options:
+  email: ""
+  password: ""
+  electrometer_id: ""
+schema:
+  email: str
+  password: password
+  electrometer_id: str?
+map:
+  - "share:rw"
