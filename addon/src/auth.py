@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable
+
+from .session_manager import Credentials, CredentialsProvider, SessionState, SessionStore
+
+
+PND_BASE_URL = "https://pnd.cezdistribuce.cz/cezpnd2"
+PORTAL_URL = "https://dip.cezdistribuce.cz/irj/portal?zpnd"
+
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Safari/537.36"
+)
+
+
+@dataclass(frozen=True)
+class AuthSession:
+    cookies: list[dict[str, Any]]
+    reused: bool
+
+
+class PlaywrightAuthClient:
+    def __init__(
+        self,
+        credentials_provider: CredentialsProvider,
+        session_store: SessionStore,
+        login_runner: Callable[[Credentials], Awaitable[list[dict[str, Any]]]] | None = None,
+    ) -> None:
+        self._credentials_provider = credentials_provider
+        self._session_store = session_store
+        self._login_runner = login_runner or self._login_via_playwright
+
+    async def ensure_session(self) -> AuthSession:
+        state = self._session_store.load()
+        if state and not self._session_store.is_expired(state):
+            return AuthSession(cookies=state.cookies, reused=True)
+        credentials = self._credentials_provider.get_credentials()
+        cookies = await self._login_runner(credentials)
+        self._session_store.save(cookies)
+        return AuthSession(cookies=cookies, reused=False)
+
+    async def _login_via_playwright(self, credentials: Credentials) -> list[dict[str, Any]]:
+        from playwright.async_api import async_playwright  # type: ignore[import-not-found]
+
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=True)
+            context = await browser.new_context(
+                user_agent=DEFAULT_USER_AGENT,
+                locale="cs-CZ",
+                timezone_id="Europe/Prague",
+                viewport={"width": 1280, "height": 720},
+            )
+            page = await context.new_page()
+
+            await page.goto(PND_BASE_URL, wait_until="domcontentloaded")
+            try:
+                await page.wait_for_selector('input[name="username"]', timeout=30_000)
+            except Exception:
+                await page.goto(PORTAL_URL, wait_until="domcontentloaded")
+                await page.wait_for_selector('input[name="username"]', timeout=120_000)
+
+            login_target = await _get_login_target(page)
+            await login_target.fill('input[name="username"]', credentials.email)
+            await login_target.fill('input[name="password"]', credentials.password)
+            submit_locator = login_target.locator(
+                'input[type="submit"], button[type="submit"]'
+            ).first
+            await submit_locator.wait_for(timeout=120_000)
+            await submit_locator.click()
+
+            await _wait_for_login_success(page)
+            cookies = await context.cookies()
+            await browser.close()
+            return cookies
+
+
+async def _wait_for_login_success(page: Any) -> None:
+    success_pattern = re.compile(
+        r".*/(cezpnd2/dashboard/|cezpnd2/external/dashboard/view|irj/portal).*"
+    )
+    await page.wait_for_url(success_pattern, timeout=120_000)
+
+
+async def _get_login_target(page: Any) -> Any:
+    for frame in page.frames:
+        if (
+            await frame.locator('input[name="username"]').count() > 0
+            and await frame.locator('input[name="password"]').count() > 0
+        ):
+            return frame
+    return page
