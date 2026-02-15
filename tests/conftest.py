@@ -112,7 +112,15 @@ class AbortFlow(Exception):
 
 
 class AuthenticationError(Exception):
-    """Raised on invalid credentials."""
+    pass
+
+
+class ConfigEntryAuthFailed(Exception):
+    pass
+
+
+class ConfigEntryNotReady(Exception):
+    pass
 
 
 # ── Constants ──────────────────────────────────────────────────────────────
@@ -126,8 +134,42 @@ CONF_SCAN_INTERVAL = "scan_interval"
 
 
 def async_get_clientsession(hass: Any) -> Any:
-    """Return a mock aiohttp session."""
     return MagicMock()
+
+
+class UpdateFailed(Exception):
+    pass
+
+
+class DataUpdateCoordinator:
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+    def __class_getitem__(cls, item):
+        return cls
+
+    def __init__(
+        self,
+        hass,
+        logger,
+        *,
+        config_entry=None,
+        name: str = "",
+        update_interval: Any = None,
+    ):
+        self.hass = hass
+        self.logger = logger
+        self.config_entry = config_entry
+        self.name = name
+        self.update_interval = update_interval
+        self.data: Any = None
+
+    async def _async_update_data(self):
+        raise NotImplementedError
+
+    async def async_config_entry_first_refresh(self):
+        self.data = await self._async_update_data()
 
 
 # ── Register mock modules ────────────────────────────────────────────────
@@ -162,7 +204,17 @@ _make_module(
         "async_get_clientsession": async_get_clientsession,
     },
 )
-_make_module("homeassistant.exceptions", {})
+_make_module(
+    "homeassistant.helpers.update_coordinator",
+    {
+        "DataUpdateCoordinator": DataUpdateCoordinator,
+        "UpdateFailed": UpdateFailed,
+    },
+)
+_make_module("homeassistant.exceptions", {
+    "ConfigEntryAuthFailed": ConfigEntryAuthFailed,
+    "ConfigEntryNotReady": ConfigEntryNotReady,
+})
 
 
 # ---------------------------------------------------------------------------

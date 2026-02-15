@@ -9,6 +9,13 @@
           "password": "Password",
           "scan_interval": "Poll interval (minutes)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate ČEZ Distribuce PND",
+        "description": "Your session has expired. Please re-enter your password for {username}.",
+        "data": {
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -16,7 +23,8 @@
       "cannot_connect": "Cannot connect to ČEZ servers"
     },
     "abort": {
-      "already_configured": "This account is already configured"
+      "already_configured": "This account is already configured",
+      "reauth_successful": "Re-authentication successful"
     }
   }
 }
