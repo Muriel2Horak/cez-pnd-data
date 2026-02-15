@@ -34,7 +34,7 @@ Pokud ještě nemáte MQTT broker:
 
 1. Přidejte tento repozitář jako add-on repozitář:
    ```
-   https://github.com/YOUR_USERNAME/cez-pnd
+   https://github.com/Muriel2Horak/cez-pnd-data
    ```
 2. Najděte **CEZ PND** v obchodě s doplňky a nainstalujte
 3. Přejděte do konfigurace add-onu
