@@ -2,16 +2,21 @@
   "config": {
     "step": {
       "user": {
-        "title": "CEZ PND",
-        "description": "Configure your CEZ PND account.",
+        "title": "ČEZ Distribuce PND",
+        "description": "Enter your ČEZ Distribuce credentials to connect.",
         "data": {
-          "username": "Username",
-          "password": "Password"
+          "username": "Email",
+          "password": "Password",
+          "scan_interval": "Poll interval (minutes)"
         }
       }
     },
     "error": {
-      "auth": "Invalid credentials"
+      "invalid_auth": "Invalid credentials",
+      "cannot_connect": "Cannot connect to ČEZ servers"
+    },
+    "abort": {
+      "already_configured": "This account is already configured"
     }
   }
 }
