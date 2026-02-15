@@ -62,13 +62,13 @@ class CezPndApiClient:
             aiohttp.ClientError: If network error occurs.
         """
         # Step 1: GET CAS login page, extract 'execution' CSRF token
-        service_url = self._get_service_url()
+        service_url = await self._get_service_url()
         login_page_url = f"{self.CAS_LOGIN_URL}?service={service_url}"
         
         async with self._session.get(login_page_url) as response:
             response.raise_for_status()
             html = await response.text()
-            execution = self._extract_execution_token(html)
+            execution = await self._extract_execution_token(html)
         
         # Step 2: POST credentials + execution token
         login_data = {

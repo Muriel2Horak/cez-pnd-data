@@ -130,6 +130,14 @@ CONF_PASSWORD = "password"
 CONF_SCAN_INTERVAL = "scan_interval"
 
 
+# ── Platform enum ──────────────────────────────────────────────────────────
+
+
+class Platform:
+    """Minimal mock of homeassistant.const.Platform."""
+    SENSOR = "sensor"
+
+
 # ── aiohttp helper ─────────────────────────────────────────────────────────
 
 
@@ -172,15 +180,33 @@ class DataUpdateCoordinator:
         self.data = await self._async_update_data()
 
 
+# ── ConfigEntry mock ──────────────────────────────────────────────────────
+
+
+class ConfigEntry:
+    """Minimal mock of homeassistant.config_entries.ConfigEntry."""
+    pass
+
+
+# ── HomeAssistant mock ────────────────────────────────────────────────────
+
+
+class HomeAssistant:
+    """Minimal mock of homeassistant.core.HomeAssistant."""
+    pass
+
+
 # ── Register mock modules ────────────────────────────────────────────────
 
 _make_module("homeassistant")
+_make_module("homeassistant.core", {"HomeAssistant": HomeAssistant})
 _make_module(
     "homeassistant.const",
     {
         "CONF_USERNAME": CONF_USERNAME,
         "CONF_PASSWORD": CONF_PASSWORD,
         "CONF_SCAN_INTERVAL": CONF_SCAN_INTERVAL,
+        "Platform": Platform,
     },
 )
 _make_module(
@@ -188,6 +214,7 @@ _make_module(
     {
         "ConfigFlow": ConfigFlow,
         "ConfigFlowResult": dict,
+        "ConfigEntry": ConfigEntry,
     },
 )
 _make_module(

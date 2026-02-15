@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import voluptuous as vol
 
-from tests.conftest import (
+from conftest import (
     AbortFlow,
     FlowResultType,
 )

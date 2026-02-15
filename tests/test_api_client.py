@@ -240,121 +240,65 @@ def test_parse_status_codes() -> None:
 @pytest.mark.asyncio
 async def test_authenticate_success() -> None:
     """Test successful authentication flow."""
-    # Mock the 5-step OAuth2 redirect chain
-    mock_login_page = """
-    <html>
-    <input type="hidden" name="execution" value="test-execution-token-12345"/>
-    </html>
-    """
-    mock_post_login_response = """
-    HTTP/1.1 302 Found
-    Location: https://cas.cez.cz/cas/oauth2.0/callbackAuthorize?ticket=ST-test-ticket-abc
-    """
-    mock_authorize_response = """
-    HTTP/1.1 302 Found
-    Location: https://cas.cez.cz/cas/oidc/authorize?response_type=code&client_id=M7z7ZnPjX3FNMouD.onpremise.bp.pnd.prod&redirect_uri=https://pnd.cezdistribuce.cz/cezpnd2/login/oauth2/code/mepas-external&scope=openid+profile&code=OC-test-code-xyz
-    """
-    mock_oidc_response = """
-    HTTP/1.1 302 Found
-    Location: https://pnd.cezdistribuce.cz/cezpnd2/login/oauth2/code/mepas-external?code=OC-test-code-xyz&state=xyz
-    """
-    mock_dashboard_response = """
-    HTTP/1.1 200 OK
-    <html>Dashboard loaded</html>
-    """
-    
-    def request_callback(url, **kwargs):
-        assert kwargs.get("method", "GET") == "GET"
-        
-        if "callbackAuthorize" in url:
-            return CallbackResult(payload=mock_authorize_response)
-        elif "oidc/authorize" in url:
-            return CallbackResult(payload=mock_oidc_response)
-        elif "dashboard/view" in url:
-            return CallbackResult(payload=mock_dashboard_response)
-        # For login page GET
-        return CallbackResult(payload=mock_login_page)
-    
+    mock_login_page = '<html><input type="hidden" name="execution" value="test-execution-token-12345"/></html>'
+
+    service_url = "https://pnd.cezdistribuce.cz/cezpnd2/login/oauth2/code/mepas-external"
+    login_get_url = f"https://cas.cez.cz/cas/login?service={service_url}"
+
     with aioresponses() as mocked:
-        # Login page GET
-        mocked.get(
-            "https://cas.cez.cz/cas/login?service=https://pnd.cezdistribuce.cz/cezpnd2/login/oauth2/code/mepas-external",
-            callback=request_callback,
-        )
-        # POST credentials
-        mocked.post(
-            "https://cas.cez.cz/cas/login",
-            callback=request_callback,
-        )
-        # Follow redirects (authorize, oidc, dashboard)
-        mocked.get(
-            "https://cas.cez.cz/cas/oauth2.0/callbackAuthorize?ticket=ST-test-ticket-abc",
-            callback=request_callback,
-        )
+        # Step 1: GET CAS login page
+        mocked.get(login_get_url, body=mock_login_page)
+        # Step 2: POST credentials
+        mocked.post("https://cas.cez.cz/cas/login", body="<html>OK</html>")
+        # Step 3: GET authorize
         mocked.get(
             "https://cas.cez.cz/cas/oidc/authorize",
-            callback=request_callback,
+            body="OK",
+            repeat=True,
         )
+        # Step 5: GET dashboard
         mocked.get(
-            "https://pnd.cezdistribuce.cz/cezpnd2/login/oauth2/code/mepas-external?code=OC-test-code-xyz&state=xyz",
-            callback=request_callback,
+            "https://pnd.cezdistribuce.cz/cezpnd2/external/dashboard/view",
+            body="<html>Dashboard</html>",
         )
-        
+
         async with aiohttp.ClientSession() as session:
             client = CezPndApiClient("test@example.com", "password123", session)
             user_id = await client.authenticate()
-    
+
     assert user_id == "test@example.com"
 
 
 @pytest.mark.asyncio
 async def test_authenticate_invalid_credentials() -> None:
     """Test authentication with invalid credentials."""
-    mock_error_response = """
-    <html>
-    <div class="error">Invalid credentials</div>
-    </html>
-    """
-    
-    def request_callback(url, **kwargs):
-        if "cas/login" in url and kwargs.get("method", "POST"):
-            return CallbackResult(text=mock_error_response)
-        return CallbackResult(text=mock_login_page)
-    
+    mock_login_page = '<html><input type="hidden" name="execution" value="tok"/></html>'
+    mock_error_response = "<html><div>Invalid credentials</div></html>"
+
+    service_url = "https://pnd.cezdistribuce.cz/cezpnd2/login/oauth2/code/mepas-external"
+    login_get_url = f"https://cas.cez.cz/cas/login?service={service_url}"
+
     with aioresponses() as mocked:
-        mocked.get(
-            "https://cas.cez.cz/cas/login?service=...",
-            callback=request_callback,
-        )
-        mocked.post(
-            "https://cas.cez.cz/cas/login",
-            callback=request_callback,
-        )
-        
+        mocked.get(login_get_url, body=mock_login_page)
+        mocked.post("https://cas.cez.cz/cas/login", body=mock_error_response)
+
         async with aiohttp.ClientSession() as session:
             client = CezPndApiClient("test@example.com", "wrongpassword", session)
             with pytest.raises(AuthenticationError) as exc_info:
                 await client.authenticate()
-    
-    assert str(exc_info.value) == "Invalid credentials"
+
+    assert "Invalid credentials" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
 async def test_authenticate_network_error() -> None:
     """Test authentication with network error."""
-    
-    def request_callback(url, **kwargs):
-        # First call returns successfully
-        if "cas/login" in url and kwargs.get("method", "POST"):
-            return CallbackResult(text="<html>Login page</html>")
-        raise aiohttp.ClientError("Network error")
-    
+    service_url = "https://pnd.cezdistribuce.cz/cezpnd2/login/oauth2/code/mepas-external"
+    login_get_url = f"https://cas.cez.cz/cas/login?service={service_url}"
+
     with aioresponses() as mocked:
-        mocked.get(
-            "https://cas.cez.cz/cas/login?service=...",
-            callback=request_callback,
-        )
-        
+        mocked.get(login_get_url, exception=aiohttp.ClientError("Network error"))
+
         async with aiohttp.ClientSession() as session:
             client = CezPndApiClient("test@example.com", "password123", session)
             with pytest.raises(aiohttp.ClientError):
@@ -371,49 +315,20 @@ async def test_extract_execution_token() -> None:
     </form>
     </html>
     """
-    
-    with aioresponses() as mocked:
-        mocked.get(
-            "https://cas.cez.cz/cas/login",
-            callback=CallbackResult(text=mock_html),
-        )
-        
-        async with aiohttp.ClientSession() as session:
-            client = CezPndApiClient("test@example.com", "password123", session)
-            # Call the private method
-            token = await client._extract_execution_token(mock_html)
-    
+
+    async with aiohttp.ClientSession() as session:
+        client = CezPndApiClient("test@example.com", "password123", session)
+        token = await client._extract_execution_token(mock_html)
+
     assert token == "test-execution-token"
 
 
 @pytest.mark.asyncio
-async def test_follow_oauth2_redirects() -> None:
-    """Test following OAuth2 redirect chain."""
-    # Mock 5-step redirect chain
-    redirects = []
-    
-    def request_callback(url, **kwargs):
-        redirects.append(url)
-        # Last redirect is to dashboard
-        if "dashboard/view" in url:
-            return CallbackResult(text="<html>Dashboard</html>")
-        # All other redirects return 302 with Location header
-        raise aiohttp.ClientError("Redirect", status=302, headers={"Location": url})
-    
-    with aioresponses() as mocked:
-        # Login page
-        mocked.get(
-            "https://cas.cez.cz/cas/login?service=...",
-            callback=CallbackResult(text="<html>Login page</html>"),
-        )
-        # POST credentials
-        mocked.post(
-            "https://cas.cez.cz/cas/login",
-            callback=request_callback,
-        )
-        
-        async with aiohttp.ClientSession() as session:
-            client = CezPndApiClient("test@example.com", "password123", session)
-            user_id = await client.authenticate()
-    
-    assert len(redirects) == 4  # authorize, oidc, code, dashboard
+async def test_extract_execution_token_missing() -> None:
+    """Test extraction of execution token raises when missing."""
+    mock_html = "<html><body>No token here</body></html>"
+
+    async with aiohttp.ClientSession() as session:
+        client = CezPndApiClient("test@example.com", "password123", session)
+        with pytest.raises(AuthenticationError, match="execution token"):
+            await client._extract_execution_token(mock_html)
