@@ -474,3 +474,482 @@ class TestToDict:
         payload = {"hasData": False, "columns": [], "values": []}
         p = CezDataParser(payload)
         assert p.get_latest_reading_dict() is None
+
+
+# ===========================================================================
+# 9. Multi-assembly fixtures (Tab 03, 04, 07, 08, 17)
+# ===========================================================================
+
+
+@pytest.fixture
+def tab03_payload() -> dict:
+    """Tab 03: Reactive consumption — Profil +A, Profil +Ri, Profil -Rc."""
+    return {
+        "hasData": True,
+        "size": 2,
+        "columns": [
+            {"id": "1000", "name": "Datum", "unit": None},
+            {"id": "1001", "name": "Profil +A", "unit": "kW"},
+            {"id": "1002", "name": "Profil +Ri", "unit": "kW"},
+            {"id": "1003", "name": "Profil -Rc", "unit": "kW"},
+        ],
+        "values": [
+            {
+                "1000": {"v": "01.01.2026 00:15"},
+                "1001": {"v": "1,5", "s": 32},
+                "1002": {"v": "0,8", "s": 32},
+                "1003": {"v": "0,3", "s": 32},
+            },
+            {
+                "1000": {"v": "01.01.2026 00:30"},
+                "1001": {"v": "2,0", "s": 32},
+                "1002": {"v": "1,1", "s": 32},
+                "1003": {"v": "0,5", "s": 32},
+            },
+        ],
+        "statuses": {"32": {"n": "naměřená data OK", "c": "#222222", "m": 32}},
+    }
+
+
+@pytest.fixture
+def tab04_payload() -> dict:
+    """Tab 04: Reactive production — Profil -A, Profil -Ri, Profil +Rc."""
+    return {
+        "hasData": True,
+        "size": 2,
+        "columns": [
+            {"id": "1000", "name": "Datum", "unit": None},
+            {"id": "1001", "name": "Profil -A", "unit": "kW"},
+            {"id": "1002", "name": "Profil -Ri", "unit": "kW"},
+            {"id": "1003", "name": "Profil +Rc", "unit": "kW"},
+        ],
+        "values": [
+            {
+                "1000": {"v": "01.01.2026 00:15"},
+                "1001": {"v": "0,2", "s": 32},
+                "1002": {"v": "0,05", "s": 32},
+                "1003": {"v": "0,1", "s": 32},
+            },
+            {
+                "1000": {"v": "01.01.2026 00:30"},
+                "1001": {"v": "0,4", "s": 32},
+                "1002": {"v": "0,07", "s": 32},
+                "1003": {"v": "0,15", "s": 32},
+            },
+        ],
+        "statuses": {"32": {"n": "naměřená data OK", "c": "#222222", "m": 32}},
+    }
+
+
+@pytest.fixture
+def tab07_payload() -> dict:
+    """Tab 07: Daily consumption — +A d/784703."""
+    return {
+        "hasData": True,
+        "size": 2,
+        "columns": [
+            {"id": "1000", "name": "Datum", "unit": None},
+            {"id": "1001", "name": "+A d/784703", "unit": "kWh"},
+        ],
+        "values": [
+            {
+                "1000": {"v": "01.01.2026 00:15"},
+                "1001": {"v": "12,5", "s": 32},
+            },
+            {
+                "1000": {"v": "01.01.2026 00:30"},
+                "1001": {"v": "13,2", "s": 32},
+            },
+        ],
+        "statuses": {"32": {"n": "naměřená data OK", "c": "#222222", "m": 32}},
+    }
+
+
+@pytest.fixture
+def tab08_payload() -> dict:
+    """Tab 08: Daily production — -A d/784703."""
+    return {
+        "hasData": True,
+        "size": 2,
+        "columns": [
+            {"id": "1000", "name": "Datum", "unit": None},
+            {"id": "1001", "name": "-A d/784703", "unit": "kWh"},
+        ],
+        "values": [
+            {
+                "1000": {"v": "01.01.2026 00:15"},
+                "1001": {"v": "5,3", "s": 32},
+            },
+            {
+                "1000": {"v": "01.01.2026 00:30"},
+                "1001": {"v": "6,1", "s": 32},
+            },
+        ],
+        "statuses": {"32": {"n": "naměřená data OK", "c": "#222222", "m": 32}},
+    }
+
+
+@pytest.fixture
+def tab17_payload() -> dict:
+    """Tab 17: Register readings — +E, -E, +E_NT, +E_VT."""
+    return {
+        "hasData": True,
+        "size": 2,
+        "columns": [
+            {"id": "1000", "name": "Datum", "unit": None},
+            {"id": "1001", "name": "+E/784703", "unit": "kWh"},
+            {"id": "1002", "name": "-E/784703", "unit": "kWh"},
+            {"id": "1003", "name": "+E_NT/784703", "unit": "kWh"},
+            {"id": "1004", "name": "+E_VT/784703", "unit": "kWh"},
+        ],
+        "values": [
+            {
+                "1000": {"v": "01.01.2026 00:15"},
+                "1001": {"v": "1000,5", "s": 32},
+                "1002": {"v": "200,3", "s": 32},
+                "1003": {"v": "600,2", "s": 32},
+                "1004": {"v": "400,3", "s": 32},
+            },
+            {
+                "1000": {"v": "01.01.2026 00:30"},
+                "1001": {"v": "1001,0", "s": 32},
+                "1002": {"v": "200,5", "s": 32},
+                "1003": {"v": "600,5", "s": 32},
+                "1004": {"v": "400,5", "s": 32},
+            },
+        ],
+        "statuses": {"32": {"n": "naměřená data OK", "c": "#222222", "m": 32}},
+    }
+
+
+# ===========================================================================
+# 10. Tab 03 — Reactive consumption (Profil +A, +Ri, -Rc)
+# ===========================================================================
+
+
+class TestTab03ReactiveConsumption:
+    """Tab 03 columns: Profil +A → consumption, Profil +Ri → reactive_import_inductive,
+    Profil -Rc → reactive_export_capacitive."""
+
+    def test_discovers_consumption_from_profil_plus_a(self, tab03_payload):
+        p = CezDataParser(tab03_payload)
+        assert p.consumption_col_id == "1001"
+
+    def test_discovers_reactive_import_inductive(self, tab03_payload):
+        p = CezDataParser(tab03_payload)
+        assert p.reactive_import_inductive_col_id == "1002"
+
+    def test_discovers_reactive_export_capacitive(self, tab03_payload):
+        p = CezDataParser(tab03_payload)
+        assert p.reactive_export_capacitive_col_id == "1003"
+
+    def test_parses_reactive_import_inductive_value(self, tab03_payload):
+        p = CezDataParser(tab03_payload)
+        records = p.parse_records()
+        assert len(records) == 2
+        assert records[0].reactive_import_inductive_kw == 0.8
+        assert records[1].reactive_import_inductive_kw == 1.1
+
+    def test_parses_reactive_export_capacitive_value(self, tab03_payload):
+        p = CezDataParser(tab03_payload)
+        records = p.parse_records()
+        assert records[0].reactive_export_capacitive_kw == 0.3
+        assert records[1].reactive_export_capacitive_kw == 0.5
+
+    def test_consumption_from_profil_plus_a(self, tab03_payload):
+        p = CezDataParser(tab03_payload)
+        records = p.parse_records()
+        assert records[0].consumption_kw == 1.5
+
+    def test_dict_includes_reactive_fields(self, tab03_payload):
+        p = CezDataParser(tab03_payload)
+        d = p.get_latest_reading_dict()
+        assert d is not None
+        assert d["reactive_import_inductive_kw"] == 1.1
+        assert d["reactive_export_capacitive_kw"] == 0.5
+
+    def test_no_meter_id_from_profil_columns(self, tab03_payload):
+        """Profil columns have no meter ID embedded — electrometer_id should be None."""
+        p = CezDataParser(tab03_payload)
+        assert p.electrometer_id is None
+
+
+# ===========================================================================
+# 11. Tab 04 — Reactive production (Profil -A, -Ri, +Rc)
+# ===========================================================================
+
+
+class TestTab04ReactiveProduction:
+    """Tab 04 columns: Profil -A → production, Profil -Ri → reactive_export_inductive,
+    Profil +Rc → reactive_import_capacitive."""
+
+    def test_discovers_production_from_profil_minus_a(self, tab04_payload):
+        p = CezDataParser(tab04_payload)
+        assert p.production_col_id == "1001"
+
+    def test_discovers_reactive_export_inductive(self, tab04_payload):
+        p = CezDataParser(tab04_payload)
+        assert p.reactive_export_inductive_col_id == "1002"
+
+    def test_discovers_reactive_import_capacitive(self, tab04_payload):
+        p = CezDataParser(tab04_payload)
+        assert p.reactive_import_capacitive_col_id == "1003"
+
+    def test_parses_reactive_export_inductive_value(self, tab04_payload):
+        p = CezDataParser(tab04_payload)
+        records = p.parse_records()
+        assert records[0].reactive_export_inductive_kw == 0.05
+        assert records[1].reactive_export_inductive_kw == 0.07
+
+    def test_parses_reactive_import_capacitive_value(self, tab04_payload):
+        p = CezDataParser(tab04_payload)
+        records = p.parse_records()
+        assert records[0].reactive_import_capacitive_kw == 0.1
+        assert records[1].reactive_import_capacitive_kw == 0.15
+
+    def test_production_from_profil_minus_a(self, tab04_payload):
+        p = CezDataParser(tab04_payload)
+        records = p.parse_records()
+        assert records[0].production_kw == 0.2
+
+    def test_dict_includes_reactive_fields(self, tab04_payload):
+        p = CezDataParser(tab04_payload)
+        d = p.get_latest_reading_dict()
+        assert d is not None
+        assert d["reactive_export_inductive_kw"] == 0.07
+        assert d["reactive_import_capacitive_kw"] == 0.15
+
+
+# ===========================================================================
+# 12. Tab 07 — Daily consumption (+A d/NNNN)
+# ===========================================================================
+
+
+class TestTab07DailyConsumption:
+    """Tab 07 column: +A d/784703 → daily_consumption."""
+
+    def test_discovers_daily_consumption(self, tab07_payload):
+        p = CezDataParser(tab07_payload)
+        assert p.daily_consumption_col_id == "1001"
+
+    def test_parses_daily_consumption_value(self, tab07_payload):
+        p = CezDataParser(tab07_payload)
+        records = p.parse_records()
+        assert len(records) == 2
+        assert records[0].daily_consumption_kwh == 12.5
+        assert records[1].daily_consumption_kwh == 13.2
+
+    def test_extracts_meter_id_from_daily_column(self, tab07_payload):
+        p = CezDataParser(tab07_payload)
+        assert p.electrometer_id == "784703"
+
+    def test_dict_includes_daily_consumption(self, tab07_payload):
+        p = CezDataParser(tab07_payload)
+        d = p.get_latest_reading_dict()
+        assert d is not None
+        assert d["daily_consumption_kwh"] == 13.2
+        assert d["electrometer_id"] == "784703"
+
+
+# ===========================================================================
+# 13. Tab 08 — Daily production (-A d/NNNN)
+# ===========================================================================
+
+
+class TestTab08DailyProduction:
+    """Tab 08 column: -A d/784703 → daily_production."""
+
+    def test_discovers_daily_production(self, tab08_payload):
+        p = CezDataParser(tab08_payload)
+        assert p.daily_production_col_id == "1001"
+
+    def test_parses_daily_production_value(self, tab08_payload):
+        p = CezDataParser(tab08_payload)
+        records = p.parse_records()
+        assert len(records) == 2
+        assert records[0].daily_production_kwh == 5.3
+        assert records[1].daily_production_kwh == 6.1
+
+    def test_extracts_meter_id_from_daily_column(self, tab08_payload):
+        p = CezDataParser(tab08_payload)
+        assert p.electrometer_id == "784703"
+
+    def test_dict_includes_daily_production(self, tab08_payload):
+        p = CezDataParser(tab08_payload)
+        d = p.get_latest_reading_dict()
+        assert d is not None
+        assert d["daily_production_kwh"] == 6.1
+
+
+# ===========================================================================
+# 14. Tab 17 — Register readings (+E, -E, +E_NT, +E_VT)
+# ===========================================================================
+
+
+class TestTab17RegisterReadings:
+    """Tab 17 columns: +E → register_consumption, -E → register_production,
+    +E_NT → register_low_tariff, +E_VT → register_high_tariff."""
+
+    def test_discovers_register_consumption(self, tab17_payload):
+        p = CezDataParser(tab17_payload)
+        assert p.register_consumption_col_id == "1001"
+
+    def test_discovers_register_production(self, tab17_payload):
+        p = CezDataParser(tab17_payload)
+        assert p.register_production_col_id == "1002"
+
+    def test_discovers_register_low_tariff(self, tab17_payload):
+        p = CezDataParser(tab17_payload)
+        assert p.register_low_tariff_col_id == "1003"
+
+    def test_discovers_register_high_tariff(self, tab17_payload):
+        p = CezDataParser(tab17_payload)
+        assert p.register_high_tariff_col_id == "1004"
+
+    def test_parses_register_consumption_value(self, tab17_payload):
+        p = CezDataParser(tab17_payload)
+        records = p.parse_records()
+        assert records[0].register_consumption_kwh == 1000.5
+        assert records[1].register_consumption_kwh == 1001.0
+
+    def test_parses_register_production_value(self, tab17_payload):
+        p = CezDataParser(tab17_payload)
+        records = p.parse_records()
+        assert records[0].register_production_kwh == 200.3
+        assert records[1].register_production_kwh == 200.5
+
+    def test_parses_register_low_tariff_value(self, tab17_payload):
+        p = CezDataParser(tab17_payload)
+        records = p.parse_records()
+        assert records[0].register_low_tariff_kwh == 600.2
+        assert records[1].register_low_tariff_kwh == 600.5
+
+    def test_parses_register_high_tariff_value(self, tab17_payload):
+        p = CezDataParser(tab17_payload)
+        records = p.parse_records()
+        assert records[0].register_high_tariff_kwh == 400.3
+        assert records[1].register_high_tariff_kwh == 400.5
+
+    def test_extracts_meter_id_from_register_columns(self, tab17_payload):
+        p = CezDataParser(tab17_payload)
+        assert p.electrometer_id == "784703"
+
+    def test_dict_includes_register_fields(self, tab17_payload):
+        p = CezDataParser(tab17_payload)
+        d = p.get_latest_reading_dict()
+        assert d is not None
+        assert d["register_consumption_kwh"] == 1001.0
+        assert d["register_production_kwh"] == 200.5
+        assert d["register_low_tariff_kwh"] == 600.5
+        assert d["register_high_tariff_kwh"] == 400.5
+        assert d["electrometer_id"] == "784703"
+
+
+# ===========================================================================
+# 15. Tab 00 backward compatibility regression
+# ===========================================================================
+
+
+class TestTab00BackwardCompatibility:
+    """Existing Tab 00 parsing must remain UNCHANGED after multi-assembly support."""
+
+    def test_tab00_consumption_unchanged(self, minimal_payload):
+        p = CezDataParser(minimal_payload)
+        records = p.parse_records()
+        assert records[0].consumption_kw == 1.5
+        assert records[1].consumption_kw == 2.0
+
+    def test_tab00_production_unchanged(self, minimal_payload):
+        p = CezDataParser(minimal_payload)
+        records = p.parse_records()
+        assert records[0].production_kw == 0.0
+        assert records[1].production_kw == 0.1
+
+    def test_tab00_reactive_unchanged(self, minimal_payload):
+        p = CezDataParser(minimal_payload)
+        records = p.parse_records()
+        assert records[0].reactive_kw == 3.14
+        assert records[1].reactive_kw == 4.0
+
+    def test_tab00_new_fields_are_none(self, minimal_payload):
+        """New fields should be None for Tab 00 payloads."""
+        p = CezDataParser(minimal_payload)
+        records = p.parse_records()
+        first = records[0]
+        assert first.reactive_import_inductive_kw is None
+        assert first.reactive_export_capacitive_kw is None
+        assert first.reactive_export_inductive_kw is None
+        assert first.reactive_import_capacitive_kw is None
+        assert first.daily_consumption_kwh is None
+        assert first.daily_production_kwh is None
+        assert first.register_consumption_kwh is None
+        assert first.register_production_kwh is None
+        assert first.register_low_tariff_kwh is None
+        assert first.register_high_tariff_kwh is None
+
+    def test_tab00_dict_includes_new_fields_as_none(self, minimal_payload):
+        """Dict output should include all new fields even for Tab 00 (as None)."""
+        p = CezDataParser(minimal_payload)
+        d = p.get_latest_reading_dict()
+        assert d is not None
+        assert d["reactive_import_inductive_kw"] is None
+        assert d["reactive_export_capacitive_kw"] is None
+        assert d["reactive_export_inductive_kw"] is None
+        assert d["reactive_import_capacitive_kw"] is None
+        assert d["daily_consumption_kwh"] is None
+        assert d["daily_production_kwh"] is None
+        assert d["register_consumption_kwh"] is None
+        assert d["register_production_kwh"] is None
+        assert d["register_low_tariff_kwh"] is None
+        assert d["register_high_tariff_kwh"] is None
+
+    def test_tab00_electrometer_id_unchanged(self, minimal_payload):
+        p = CezDataParser(minimal_payload)
+        assert p.electrometer_id == "999999"
+
+    def test_tab00_column_discovery_unchanged(self, minimal_payload):
+        p = CezDataParser(minimal_payload)
+        assert p.timestamp_col_id == "1000"
+        assert p.consumption_col_id == "1001"
+        assert p.production_col_id == "1002"
+        assert p.reactive_col_id == "1003"
+
+    def test_tab00_latest_reading_dict_keys_superset(self, minimal_payload):
+        """Dict must still have original keys: consumption_kw, production_kw, reactive_kw, timestamp, electrometer_id."""
+        p = CezDataParser(minimal_payload)
+        d = p.get_latest_reading_dict()
+        assert "consumption_kw" in d
+        assert "production_kw" in d
+        assert "reactive_kw" in d
+        assert "timestamp" in d
+        assert "electrometer_id" in d
+
+
+# ===========================================================================
+# 16. Cross-tab: detect_electrometer_id with new column patterns
+# ===========================================================================
+
+
+class TestDetectElectrometerIdMultiAssembly:
+    """detect_electrometer_id should work with Tab 07/08/17 column patterns."""
+
+    def test_detects_from_daily_consumption_column(self, tab07_payload):
+        meter_id = detect_electrometer_id(tab07_payload)
+        assert meter_id == "784703"
+
+    def test_detects_from_daily_production_column(self, tab08_payload):
+        meter_id = detect_electrometer_id(tab08_payload)
+        assert meter_id == "784703"
+
+    def test_detects_from_register_column(self, tab17_payload):
+        meter_id = detect_electrometer_id(tab17_payload)
+        assert meter_id == "784703"
+
+    def test_no_id_from_profil_columns(self, tab03_payload):
+        """Profil columns don't contain meter ID."""
+        meter_id = detect_electrometer_id(tab03_payload)
+        assert meter_id is None
+
+    def test_no_id_from_profil_columns_with_fallback(self, tab03_payload):
+        meter_id = detect_electrometer_id(tab03_payload, fallback_id="MANUAL")
+        assert meter_id == "MANUAL"

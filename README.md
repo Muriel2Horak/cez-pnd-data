@@ -8,11 +8,34 @@ Add-on se přihlásí k portálu CEZ PND pomocí Playwright (Chromium), stáhne 
 
 **Senzory:**
 
-| Senzor | Popis | Jednotka |
-|--------|-------|----------|
-| CEZ Consumption Power | Odběr (+A) | kW |
-| CEZ Production Power | Dodávka (-A) | kW |
-| CEZ Reactive Power | Jalový výkon (Rv) | kW |
+Tento add-on poskytuje **17 senzorů** (13 PND + 4 HDO). Všechny se automaticky vytváří přes MQTT Discovery.
+
+### PND Senzory (13 ks)
+
+| Senzor | Popis | Jednotka | Zdroj (PND tabulka) |
+|--------|-------|----------|---------------------|
+| CEZ Consumption Power | Odběr (+A) | kW | Tab 00 |
+| CEZ Production Power | Dodávka (-A) | kW | Tab 00 |
+| CEZ Reactive Power | Jalový výkon (Rv) | kW | Tab 00 |
+| CEZ Reactive Import Ri+ | Import induktivní reaktivní (+ind) | var | Tab 03 |
+| CEZ Reactive Export Rc- | Export kapacitivní reaktivní (-cap) | var | Tab 03 |
+| CEZ Reactive Export Ri- | Export induktivní reaktivní (-ind) | var | Tab 04 |
+| CEZ Reactive Import Rc+ | Import kapacitivní reaktivní (+cap) | var | Tab 04 |
+| CEZ Daily Consumption | Denní odběr energie | kWh | Tab 07 |
+| CEZ Daily Production | Denní dodávka energie | kWh | Tab 07 |
+| CEZ Register Consumption (+E) | Kumulativní odběr | kWh | Tab 08 |
+| CEZ Register Production (-E) | Kumulativní dodávka | kWh | Tab 08 |
+| CEZ Register Low Tariff (NT) | Kumulativní odběr nízkého tarifu | kWh | Tab 17 |
+| CEZ Register High Tariff (VT) | Kumulativní odběr vysokého tarifu | kWh | Tab 17 |
+
+### HDO Senzory (4 ks)
+
+| Senzor | Typ | Popis |
+|--------|-----|-------|
+| CEZ HDO Low Tariff Active | binary_sensor | Je právě nízký tarif aktivní? (ON/OFF) |
+| CEZ HDO Next Switch | sensor | Kdy dojde další přepnutí tarifu (timestamp) |
+| CEZ HDO Schedule Today | sensor | Dnešní NT časová okna (např. `00:00-08:00; 09:00-12:00; 13:00-15:00; 16:00-19:00; 20:00-24:00`) |
+| CEZ HDO Signal | sensor | Název HDO signálu (např. `EVV2`) |
 
 ## Požadavky
 
