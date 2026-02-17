@@ -91,9 +91,15 @@ class TestPndFetcher:
                 date_to="14.02.2026 00:00",
             )
 
-        mock_context.request.post.assert_called_once()
-        call_args = mock_context.request.post.call_args
-        assert call_args[0][0] == PND_DATA_URL
+        # WAF warmup + actual form request = 2 calls
+        assert mock_context.request.post.call_count == 2
+        # First call: WAF warmup (JSON)
+        warmup_call = mock_context.request.post.call_args_list[0]
+        assert warmup_call[0][0] == PND_DATA_URL
+        assert "Content-Type" in warmup_call[1].get("headers", {})
+        # Second call: actual form request
+        form_call = mock_context.request.post.call_args_list[1]
+        assert form_call[0][0] == PND_DATA_URL
 
     @pytest.mark.asyncio
     async def test_fetch_adds_cookies_to_context(self) -> None:
