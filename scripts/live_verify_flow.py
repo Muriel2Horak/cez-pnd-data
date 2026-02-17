@@ -122,7 +122,7 @@ async def async_main() -> int:
 
             # Navigate to PND dashboard to establish session
             await page.goto("https://pnd.cezdistribuce.cz/cezpnd2/dashboard/view", wait_until="domcontentloaded")
-            await page.wait_for_timeout(2000)  # Wait for session
+            await page.wait_for_timeout(5000)  # Wait for session
 
             # Step 2: Fetch PND data using Playwright's request API
             print("Step 2: Fetching PND data...")
@@ -134,6 +134,22 @@ async def async_main() -> int:
             
             print(f"  Payload: {json.dumps(payload, indent=2)}")
             
+            # WAF warmup: Send JSON request first (will fail with 400, but sets WAF cookies/state)
+            print("  WAF warmup (JSON request)...")
+            try:
+                warmup_response = await context.request.post(
+                    PND_DATA_URL,
+                    data=json.dumps(payload),
+                    headers={"Content-Type": "application/json"},
+                )
+                print(f"    Warmup status: {warmup_response.status} (expected 400)")
+            except Exception as e:
+                print(f"    Warmup failed: {e} (expected)")
+            
+            await page.wait_for_timeout(1000)
+            
+            # Now the actual form request (should work after warmup)
+            print("  Sending form request...")
             response = await context.request.post(
                 PND_DATA_URL,
                 data=payload,

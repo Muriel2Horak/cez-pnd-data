@@ -3,6 +3,7 @@
 Reads configuration from environment variables and starts the orchestrator.
 """
 import asyncio
+import json
 import logging
 import os
 import signal
@@ -76,6 +77,22 @@ class PndFetcher:
                 payload = build_pnd_payload(
                     assembly_id, date_from, date_to, self._electrometer_id,
                 )
+                # WAF warmup: Send JSON request first (will fail with 400, but sets WAF cookies/state)
+                logger.debug("WAF warmup (JSON request)...")
+                try:
+                    warmup_response = await context.request.post(
+                        PND_DATA_URL,
+                        data=json.dumps(payload),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    logger.debug("Warmup status: %d (expected 400)", warmup_response.status)
+                except Exception as e:
+                    logger.debug("Warmup failed: %s (expected)", e)
+                
+                await asyncio.sleep(1)
+                
+                # Now the actual form request (should work after warmup)
+                logger.debug("Sending form request...")
                 response = await context.request.post(
                     PND_DATA_URL,
                     data=payload,
