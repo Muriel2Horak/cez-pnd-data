@@ -30,7 +30,12 @@ async def test_fetch_data_builds_correct_payload():
     # Set session.post to return the context manager
     session.post = Mock(return_value=mock_post_cm)
 
-    result = await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+    result = await client.fetch_data(
+        cookies,
+        assembly_id=-1003,
+        date_from="16.02.2026 00:00",
+        date_to="16.02.2026 00:00",
+    )
 
     call_kwargs = session.post.call_args.kwargs
     payload = call_kwargs["json"]
@@ -58,7 +63,12 @@ async def test_fetch_data_sends_post_to_correct_url():
 
     session.post = Mock(return_value=mock_post_cm)
 
-    await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+    await client.fetch_data(
+        cookies,
+        assembly_id=-1003,
+        date_from="16.02.2026 00:00",
+        date_to="16.02.2026 00:00",
+    )
 
     session.post.assert_called_once()
     call_args = session.post.call_args
@@ -67,7 +77,10 @@ async def test_fetch_data_sends_post_to_correct_url():
 
 @pytest.mark.asyncio
 async def test_fetch_data_converts_playwright_cookies():
-    cookies = [{"name": "JSESSIONID", "value": "abc123"}, {"name": "test", "value": "456"}]
+    cookies = [
+        {"name": "JSESSIONID", "value": "abc123"},
+        {"name": "test", "value": "456"},
+    ]
     session = AsyncMock()
     client = PndClient(electrometer_id="784703", session=session)
 
@@ -81,7 +94,12 @@ async def test_fetch_data_converts_playwright_cookies():
 
     session.post = Mock(return_value=mock_post_cm)
 
-    await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+    await client.fetch_data(
+        cookies,
+        assembly_id=-1003,
+        date_from="16.02.2026 00:00",
+        date_to="16.02.2026 00:00",
+    )
 
     call_kwargs = session.post.call_args.kwargs
     headers = call_kwargs["headers"]
@@ -105,7 +123,12 @@ async def test_fetch_data_returns_json_response():
 
     session.post = Mock(return_value=mock_post_cm)
 
-    result = await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+    result = await client.fetch_data(
+        cookies,
+        assembly_id=-1003,
+        date_from="16.02.2026 00:00",
+        date_to="16.02.2026 00:00",
+    )
     assert result == expected
 
 
@@ -125,7 +148,12 @@ async def test_fetch_data_raises_session_expired_on_401():
     session.post = Mock(return_value=mock_post_cm)
 
     with pytest.raises(SessionExpiredError):
-        await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+        await client.fetch_data(
+            cookies,
+            assembly_id=-1003,
+            date_from="16.02.2026 00:00",
+            date_to="16.02.2026 00:00",
+        )
 
 
 @pytest.mark.asyncio
@@ -144,7 +172,12 @@ async def test_fetch_data_raises_on_non_200():
     session.post = Mock(return_value=mock_post_cm)
 
     with pytest.raises(PndFetchError, match="PND API returned 500"):
-        await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+        await client.fetch_data(
+            cookies,
+            assembly_id=-1003,
+            date_from="16.02.2026 00:00",
+            date_to="16.02.2026 00:00",
+        )
 
 
 @pytest.mark.asyncio
@@ -161,7 +194,12 @@ async def test_fetch_data_raises_on_timeout():
     session.post = Mock(return_value=mock_post_cm)
 
     with pytest.raises(PndFetchError):
-        await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+        await client.fetch_data(
+            cookies,
+            assembly_id=-1003,
+            date_from="16.02.2026 00:00",
+            date_to="16.02.2026 00:00",
+        )
 
 
 @pytest.mark.asyncio
@@ -172,13 +210,20 @@ async def test_fetch_data_raises_on_connection_error():
 
     # Create context manager that raises connection error on enter
     mock_post_cm = Mock()
-    mock_post_cm.__aenter__ = AsyncMock(side_effect=aiohttp.ClientConnectorError(Mock(), Mock()))
+    mock_post_cm.__aenter__ = AsyncMock(
+        side_effect=aiohttp.ClientConnectorError(Mock(), Mock())
+    )
     mock_post_cm.__aexit__ = AsyncMock(return_value=None)
 
     session.post = Mock(return_value=mock_post_cm)
 
     with pytest.raises(PndFetchError):
-        await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+        await client.fetch_data(
+            cookies,
+            assembly_id=-1003,
+            date_from="16.02.2026 00:00",
+            date_to="16.02.2026 00:00",
+        )
 
 
 @pytest.mark.asyncio
@@ -198,7 +243,12 @@ async def test_fetch_data_raises_on_invalid_json():
     session.post = Mock(return_value=mock_post_cm)
 
     with pytest.raises(PndFetchError):
-        await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+        await client.fetch_data(
+            cookies,
+            assembly_id=-1003,
+            date_from="16.02.2026 00:00",
+            date_to="16.02.2026 00:00",
+        )
 
 
 def test_constructor_stores_electrometer_id():
@@ -223,7 +273,12 @@ async def test_fetch_data_uses_stored_electrometer_id():
 
     session.post = Mock(return_value=mock_post_cm)
 
-    await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+    await client.fetch_data(
+        cookies,
+        assembly_id=-1003,
+        date_from="16.02.2026 00:00",
+        date_to="16.02.2026 00:00",
+    )
 
     call_kwargs = session.post.call_args.kwargs
     payload = call_kwargs["json"]
@@ -247,7 +302,12 @@ async def test_fetch_data_handles_has_data_false():
 
     session.post = Mock(return_value=mock_post_cm)
 
-    result = await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+    result = await client.fetch_data(
+        cookies,
+        assembly_id=-1003,
+        date_from="16.02.2026 00:00",
+        date_to="16.02.2026 00:00",
+    )
     assert result == expected
 
 
@@ -267,7 +327,12 @@ async def test_fetch_data_passes_assembly_id_kwarg():
 
     session.post = Mock(return_value=mock_post_cm)
 
-    await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+    await client.fetch_data(
+        cookies,
+        assembly_id=-1003,
+        date_from="16.02.2026 00:00",
+        date_to="16.02.2026 00:00",
+    )
 
     call_kwargs = session.post.call_args.kwargs
     payload = call_kwargs["json"]
@@ -290,7 +355,12 @@ async def test_fetch_data_passes_date_from_kwargs():
 
     session.post = Mock(return_value=mock_post_cm)
 
-    await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+    await client.fetch_data(
+        cookies,
+        assembly_id=-1003,
+        date_from="16.02.2026 00:00",
+        date_to="16.02.2026 00:00",
+    )
 
     call_kwargs = session.post.call_args.kwargs
     payload = call_kwargs["json"]
@@ -313,7 +383,12 @@ async def test_fetch_data_passes_date_to_kwargs():
 
     session.post = Mock(return_value=mock_post_cm)
 
-    await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 23:59")
+    await client.fetch_data(
+        cookies,
+        assembly_id=-1003,
+        date_from="16.02.2026 00:00",
+        date_to="16.02.2026 23:59",
+    )
 
     call_kwargs = session.post.call_args.kwargs
     payload = call_kwargs["json"]
@@ -336,7 +411,12 @@ async def test_content_type_is_application_json():
 
     session.post = Mock(return_value=mock_post_cm)
 
-    await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+    await client.fetch_data(
+        cookies,
+        assembly_id=-1003,
+        date_from="16.02.2026 00:00",
+        date_to="16.02.2026 00:00",
+    )
 
     call_kwargs = session.post.call_args.kwargs
     headers = call_kwargs["headers"]
@@ -359,7 +439,12 @@ async def test_uses_chrome_user_agent():
 
     session.post = Mock(return_value=mock_post_cm)
 
-    await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+    await client.fetch_data(
+        cookies,
+        assembly_id=-1003,
+        date_from="16.02.2026 00:00",
+        date_to="16.02.2026 00:00",
+    )
 
     call_kwargs = session.post.call_args.kwargs
     headers = call_kwargs["headers"]
@@ -382,7 +467,12 @@ async def test_uses_injected_session():
 
     session.post = Mock(return_value=mock_post_cm)
 
-    await client.fetch_data(cookies, assembly_id=-1003, date_from="16.02.2026 00:00", date_to="16.02.2026 00:00")
+    await client.fetch_data(
+        cookies,
+        assembly_id=-1003,
+        date_from="16.02.2026 00:00",
+        date_to="16.02.2026 00:00",
+    )
 
     # Verify injected session was used
     session.post.assert_called_once()

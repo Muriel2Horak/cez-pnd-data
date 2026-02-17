@@ -31,7 +31,9 @@ class DipClient:
     def __init__(self, session: aiohttp.ClientSession) -> None:
         self._session = session
 
-    async def fetch_hdo(self, cookies: list[dict[str, Any]], ean: str) -> dict[str, Any]:
+    async def fetch_hdo(
+        self, cookies: list[dict[str, Any]], ean: str
+    ) -> dict[str, Any]:
         """Fetch HDO signals using aiohttp with Playwright cookies."""
         cookie_header = playwright_cookies_to_header(cookies)
         headers = {
@@ -48,7 +50,9 @@ class DipClient:
                 timeout=timeout,
             ) as token_resp:
                 if token_resp.status != 200:
-                    raise DipTokenError(f"Token request failed: HTTP {token_resp.status}")
+                    raise DipTokenError(
+                        f"Token request failed: HTTP {token_resp.status}"
+                    )
                 token_data = await token_resp.json()
                 if "token" not in token_data:
                     raise DipTokenError("Token missing from response")
@@ -62,7 +66,9 @@ class DipClient:
                 timeout=timeout,
             ) as signals_resp:
                 if signals_resp.status != 200:
-                    raise DipFetchError(f"Signals request failed: HTTP {signals_resp.status}")
+                    raise DipFetchError(
+                        f"Signals request failed: HTTP {signals_resp.status}"
+                    )
                 data = await signals_resp.json()
                 if "data" not in data:
                     raise DipFetchError("Data missing from response")

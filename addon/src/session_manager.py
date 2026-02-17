@@ -80,12 +80,18 @@ class SessionStore:
         expires_at = self._parse_datetime(payload.get("expires_at"))
         if not isinstance(cookies, list) or created_at is None:
             return None
-        return SessionState(cookies=cookies, created_at=created_at, expires_at=expires_at)
+        return SessionState(
+            cookies=cookies, created_at=created_at, expires_at=expires_at
+        )
 
-    def save(self, cookies: list[dict[str, Any]], now: datetime | None = None) -> SessionState:
+    def save(
+        self, cookies: list[dict[str, Any]], now: datetime | None = None
+    ) -> SessionState:
         timestamp = now or datetime.now(tz=timezone.utc)
         expires_at = self._compute_expiry(cookies, timestamp)
-        state = SessionState(cookies=cookies, created_at=timestamp, expires_at=expires_at)
+        state = SessionState(
+            cookies=cookies, created_at=timestamp, expires_at=expires_at
+        )
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._path.open("w", encoding="utf-8") as handle:
             json.dump(

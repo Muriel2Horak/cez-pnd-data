@@ -37,8 +37,7 @@ def validate_pnd_data(data: dict[str, Any]) -> dict[str, Any]:
         errors.append("PND: values is empty")
     # Check if any value has actual data (non-empty)
     has_non_empty_values = any(
-        value.get("v") not in (None, "")
-        for value in values.values()
+        value.get("v") not in (None, "") for value in values.values()
     )
     if not has_non_empty_values:
         errors.append("PND: all values are empty/null")
@@ -70,7 +69,9 @@ def validate_pnd_data(data: dict[str, Any]) -> dict[str, Any]:
             errors.append(f"PND: time window {time_diff} exceeds 24 hours")
 
         if time_diff <= timedelta(minutes=0):
-            errors.append(f"PND: invalid time window (from={interval_from}, to={interval_to})")
+            errors.append(
+                f"PND: invalid time window (from={interval_from}, to={interval_to})"
+            )
 
     except (ValueError, KeyError, AttributeError) as exc:
         errors.append(f"PND: failed to parse time window: {exc}")

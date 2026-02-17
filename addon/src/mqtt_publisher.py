@@ -8,6 +8,7 @@ Topic scheme (deterministic, no ad-hoc per run):
   State  : cez_pnd/{meter_id}/{key}/state
   Avail  : cez_pnd/{meter_id}/availability
 """
+
 from __future__ import annotations
 
 import json
@@ -27,6 +28,7 @@ AVAILABILITY_TOPIC_TEMPLATE = "cez_pnd/{meter_id}/availability"
 
 
 # ── Sensor definitions ────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class SensorDefinition:
@@ -63,18 +65,84 @@ _SENSOR_DEFINITIONS: list[SensorDefinition] = [
         icon="mdi:sine-wave",
     ),
     # New reactive power sensors (from Tab 03/04, 15-min, var)
-    SensorDefinition(key="reactive_import_inductive", name="CEZ Reactive Import Ri+", unit_of_measurement="var", device_class="reactive_power", icon="mdi:sine-wave"),
-    SensorDefinition(key="reactive_export_capacitive", name="CEZ Reactive Export Rc-", unit_of_measurement="var", device_class="reactive_power", icon="mdi:sine-wave"),
-    SensorDefinition(key="reactive_export_inductive", name="CEZ Reactive Export Ri-", unit_of_measurement="var", device_class="reactive_power", icon="mdi:sine-wave"),
-    SensorDefinition(key="reactive_import_capacitive", name="CEZ Reactive Import Rc+", unit_of_measurement="var", device_class="reactive_power", icon="mdi:sine-wave"),
+    SensorDefinition(
+        key="reactive_import_inductive",
+        name="CEZ Reactive Import Ri+",
+        unit_of_measurement="var",
+        device_class="reactive_power",
+        icon="mdi:sine-wave",
+    ),
+    SensorDefinition(
+        key="reactive_export_capacitive",
+        name="CEZ Reactive Export Rc-",
+        unit_of_measurement="var",
+        device_class="reactive_power",
+        icon="mdi:sine-wave",
+    ),
+    SensorDefinition(
+        key="reactive_export_inductive",
+        name="CEZ Reactive Export Ri-",
+        unit_of_measurement="var",
+        device_class="reactive_power",
+        icon="mdi:sine-wave",
+    ),
+    SensorDefinition(
+        key="reactive_import_capacitive",
+        name="CEZ Reactive Import Rc+",
+        unit_of_measurement="var",
+        device_class="reactive_power",
+        icon="mdi:sine-wave",
+    ),
     # Daily energy aggregates (from Tab 07/08, daily, kWh)
-    SensorDefinition(key="daily_consumption", name="CEZ Daily Consumption", unit_of_measurement="kWh", device_class="energy", state_class="total_increasing", icon="mdi:flash"),
-    SensorDefinition(key="daily_production", name="CEZ Daily Production", unit_of_measurement="kWh", device_class="energy", state_class="total_increasing", icon="mdi:solar-power"),
+    SensorDefinition(
+        key="daily_consumption",
+        name="CEZ Daily Consumption",
+        unit_of_measurement="kWh",
+        device_class="energy",
+        state_class="total_increasing",
+        icon="mdi:flash",
+    ),
+    SensorDefinition(
+        key="daily_production",
+        name="CEZ Daily Production",
+        unit_of_measurement="kWh",
+        device_class="energy",
+        state_class="total_increasing",
+        icon="mdi:solar-power",
+    ),
     # Register readings (from Tab 17, daily, kWh)
-    SensorDefinition(key="register_consumption", name="CEZ Register Consumption (+E)", unit_of_measurement="kWh", device_class="energy", state_class="total_increasing", icon="mdi:counter"),
-    SensorDefinition(key="register_production", name="CEZ Register Production (-E)", unit_of_measurement="kWh", device_class="energy", state_class="total_increasing", icon="mdi:counter"),
-    SensorDefinition(key="register_low_tariff", name="CEZ Register Low Tariff (NT)", unit_of_measurement="kWh", device_class="energy", state_class="total_increasing", icon="mdi:cash-minus"),
-    SensorDefinition(key="register_high_tariff", name="CEZ Register High Tariff (VT)", unit_of_measurement="kWh", device_class="energy", state_class="total_increasing", icon="mdi:cash-plus"),
+    SensorDefinition(
+        key="register_consumption",
+        name="CEZ Register Consumption (+E)",
+        unit_of_measurement="kWh",
+        device_class="energy",
+        state_class="total_increasing",
+        icon="mdi:counter",
+    ),
+    SensorDefinition(
+        key="register_production",
+        name="CEZ Register Production (-E)",
+        unit_of_measurement="kWh",
+        device_class="energy",
+        state_class="total_increasing",
+        icon="mdi:counter",
+    ),
+    SensorDefinition(
+        key="register_low_tariff",
+        name="CEZ Register Low Tariff (NT)",
+        unit_of_measurement="kWh",
+        device_class="energy",
+        state_class="total_increasing",
+        icon="mdi:cash-minus",
+    ),
+    SensorDefinition(
+        key="register_high_tariff",
+        name="CEZ Register High Tariff (VT)",
+        unit_of_measurement="kWh",
+        device_class="energy",
+        state_class="total_increasing",
+        icon="mdi:cash-plus",
+    ),
 ]
 
 
@@ -84,6 +152,7 @@ def get_sensor_definitions() -> list[SensorDefinition]:
 
 
 # ── Binary sensor / HDO definitions ──────────────────────────────────
+
 
 @dataclass(frozen=True)
 class BinarySensorDefinition:
@@ -140,6 +209,7 @@ VALID_HDO_KEYS = frozenset(d.key for d in _HDO_SENSOR_DEFINITIONS)
 
 
 # ── Discovery payload builder ────────────────────────────────────────
+
 
 def build_discovery_payload(
     sensor: SensorDefinition,
@@ -256,9 +326,7 @@ class MqttPublisher:
             if value is None:
                 continue
 
-            topic = STATE_TOPIC_TEMPLATE.format(
-                meter_id=self._meter_id, key=key
-            )
+            topic = STATE_TOPIC_TEMPLATE.format(meter_id=self._meter_id, key=key)
             self._client.publish(
                 topic,
                 payload=str(value),
@@ -281,7 +349,8 @@ class MqttPublisher:
             if key not in VALID_HDO_KEYS:
                 continue
             topic = STATE_TOPIC_TEMPLATE.format(
-                meter_id=self._meter_id, key=key,
+                meter_id=self._meter_id,
+                key=key,
             )
             self._client.publish(
                 topic,
@@ -295,7 +364,8 @@ class MqttPublisher:
         """Publish MQTT Discovery config for all 4 HDO sensor entities."""
         for sensor in _HDO_SENSOR_DEFINITIONS:
             topic = CONFIG_TOPIC_TEMPLATE.format(
-                meter_id=self._meter_id, key=sensor.key,
+                meter_id=self._meter_id,
+                key=sensor.key,
             )
             payload = build_discovery_payload(sensor, self._meter_id)
             self._client.publish(

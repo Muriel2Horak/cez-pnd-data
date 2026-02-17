@@ -22,10 +22,15 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-from addon.src.orchestrator import (ASSEMBLY_CONFIGS, CEZ_FETCH_ERROR,
-                                    HDO_FETCH_ERROR, MQTT_PUBLISH_ERROR,
-                                    SESSION_EXPIRED_ERROR, Orchestrator,
-                                    OrchestratorConfig)
+from addon.src.orchestrator import (
+    ASSEMBLY_CONFIGS,
+    CEZ_FETCH_ERROR,
+    HDO_FETCH_ERROR,
+    MQTT_PUBLISH_ERROR,
+    SESSION_EXPIRED_ERROR,
+    Orchestrator,
+    OrchestratorConfig,
+)
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -160,9 +165,7 @@ class TestSingleCycle:
     @pytest.mark.asyncio
     async def test_single_cycle_skips_publish_when_no_data(self) -> None:
         auth = FakeAuthClient()
-        fetcher = FakeFetcher(
-            payload={"hasData": False, "columns": [], "values": []}
-        )
+        fetcher = FakeFetcher(payload={"hasData": False, "columns": [], "values": []})
         mqtt = FakeMqttPublisher()
         config = _make_config()
 
@@ -199,7 +202,9 @@ class TestSessionExpiry:
             call_count += 1
             if call_count == 1:
                 raise RuntimeError("Auth system down")
-            return MagicMock(cookies=[{"name": "JSESSIONID", "value": "abc"}], reused=True)
+            return MagicMock(
+                cookies=[{"name": "JSESSIONID", "value": "abc"}], reused=True
+            )
 
         auth.ensure_session.side_effect = ensure_with_initial_failure
 
@@ -247,7 +252,9 @@ class TestTransientRetry:
     """Transient CEZ downtime triggers bounded retry with backoff."""
 
     @pytest.mark.asyncio
-    async def test_transient_failure_in_single_assembly_still_publishes_others(self) -> None:
+    async def test_transient_failure_in_single_assembly_still_publishes_others(
+        self,
+    ) -> None:
         auth = FakeAuthClient()
         fetcher = MultiAssemblyFetcher(fail_on={-1003})
         mqtt = FakeMqttPublisher()
@@ -418,8 +425,10 @@ class TestLogging:
         with caplog.at_level(logging.ERROR):
             await orch.run_once()
 
-        assert any("cez" in record.message.lower() or "fetch" in record.message.lower()
-                    for record in caplog.records)
+        assert any(
+            "cez" in record.message.lower() or "fetch" in record.message.lower()
+            for record in caplog.records
+        )
 
     @pytest.mark.asyncio
     async def test_logs_mqtt_downtime(self, caplog) -> None:
@@ -718,7 +727,9 @@ class MultiAssemblyFetcher:
         assembly_id: int = kwargs.get("assembly_id", 0)
         if assembly_id in self._fail_on:
             raise ConnectionError(f"Assembly {assembly_id} fetch failed")
-        return self._payloads.get(assembly_id, {"hasData": False, "columns": [], "values": []})
+        return self._payloads.get(
+            assembly_id, {"hasData": False, "columns": [], "values": []}
+        )
 
 
 # ===========================================================================
@@ -951,7 +962,9 @@ class TestTab17DateFallback:
                 if call_count_1027 == 1:
                     return _make_register_payload(has_data=False)
                 return yesterday_payload
-            return _ASSEMBLY_PAYLOADS.get(assembly_id, {"hasData": False, "columns": [], "values": []})
+            return _ASSEMBLY_PAYLOADS.get(
+                assembly_id, {"hasData": False, "columns": [], "values": []}
+            )
 
         orch = Orchestrator(
             config=config,
@@ -977,7 +990,9 @@ class TestTab17DateFallback:
             assembly_id = kwargs.get("assembly_id")
             if assembly_id == -1027:
                 return _make_register_payload(has_data=False)
-            return _ASSEMBLY_PAYLOADS.get(assembly_id, {"hasData": False, "columns": [], "values": []})
+            return _ASSEMBLY_PAYLOADS.get(
+                assembly_id, {"hasData": False, "columns": [], "values": []}
+            )
 
         orch = Orchestrator(
             config=config,
@@ -1006,14 +1021,18 @@ class TestTab17DateFallback:
         async def capture_dates(cookies: Any, **kwargs: Any) -> dict:
             assembly_id = kwargs.get("assembly_id")
             if assembly_id == -1027:
-                captured_dates.append({
-                    "date_from": kwargs.get("date_from"),
-                    "date_to": kwargs.get("date_to"),
-                })
+                captured_dates.append(
+                    {
+                        "date_from": kwargs.get("date_from"),
+                        "date_to": kwargs.get("date_to"),
+                    }
+                )
                 if len(captured_dates) == 1:
                     return _make_register_payload(has_data=False)
                 return _make_register_payload(has_data=True)
-            return _ASSEMBLY_PAYLOADS.get(assembly_id, {"hasData": False, "columns": [], "values": []})
+            return _ASSEMBLY_PAYLOADS.get(
+                assembly_id, {"hasData": False, "columns": [], "values": []}
+            )
 
         orch = Orchestrator(
             config=config,
@@ -1056,7 +1075,9 @@ class TestSessionExpiryMidMultiFetch:
             if call_count == 2 and not expired_once:
                 expired_once = True
                 raise SessionExpiredError("Session expired mid-fetch")
-            return _ASSEMBLY_PAYLOADS.get(assembly_id, {"hasData": False, "columns": [], "values": []})
+            return _ASSEMBLY_PAYLOADS.get(
+                assembly_id, {"hasData": False, "columns": [], "values": []}
+            )
 
         orch = Orchestrator(
             config=config,

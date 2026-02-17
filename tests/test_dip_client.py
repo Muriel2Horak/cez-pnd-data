@@ -120,7 +120,11 @@ async def test_fetch_hdo_sends_correct_signals_url():
     mock_signals_cm.__aenter__ = AsyncMock(return_value=mock_signals_response)
     mock_signals_cm.__aexit__ = AsyncMock(return_value=None)
 
-    session.get = Mock(side_effect=lambda url, *args, **kwargs: mock_token_cm if "token/get" in url else mock_signals_cm)
+    session.get = Mock(
+        side_effect=lambda url, *args, **kwargs: (
+            mock_token_cm if "token/get" in url else mock_signals_cm
+        )
+    )
 
     client = DipClient(session=session)
     result = await client.fetch_hdo(SAMPLE_COOKIES, ean="1234567890123")
@@ -159,6 +163,7 @@ async def test_fetch_hdo_converts_playwright_cookies():
         raise aiohttp.ClientError("Stop after first request")
 
     import types
+
     original_fetch = client.fetch_hdo
     client.fetch_hdo = lambda *a, **kw: fetch_hdo_with_error(*a, **kw)
 
@@ -180,7 +185,9 @@ async def test_fetch_hdo_returns_data_field():
     expected_data = {"signal": "EVV2", "casy": ["08:00-16:00"]}
     mock_signals_response = AsyncMock()
     mock_signals_response.status = 200
-    mock_signals_response.json = AsyncMock(return_value={"data": expected_data, "other": "ignored"})
+    mock_signals_response.json = AsyncMock(
+        return_value={"data": expected_data, "other": "ignored"}
+    )
 
     mock_token_cm = Mock()
     mock_token_cm.__aenter__ = AsyncMock(return_value=mock_token_response)
@@ -190,7 +197,11 @@ async def test_fetch_hdo_returns_data_field():
     mock_signals_cm.__aenter__ = AsyncMock(return_value=mock_signals_response)
     mock_signals_cm.__aexit__ = AsyncMock(return_value=None)
 
-    session.get = Mock(side_effect=lambda url, *args, **kwargs: mock_token_cm if "token/get" in url else mock_signals_cm)
+    session.get = Mock(
+        side_effect=lambda url, *args, **kwargs: (
+            mock_token_cm if "token/get" in url else mock_signals_cm
+        )
+    )
 
     client = DipClient(session=session)
     result = await client.fetch_hdo(SAMPLE_COOKIES, ean="123")
@@ -258,7 +269,11 @@ async def test_fetch_hdo_raises_dip_fetch_error_on_signals_failure():
     mock_signals_cm.__aenter__ = AsyncMock(return_value=mock_signals_response)
     mock_signals_cm.__aexit__ = AsyncMock(return_value=None)
 
-    session.get = Mock(side_effect=lambda url, *args, **kwargs: mock_token_cm if "token/get" in url else mock_signals_cm)
+    session.get = Mock(
+        side_effect=lambda url, *args, **kwargs: (
+            mock_token_cm if "token/get" in url else mock_signals_cm
+        )
+    )
 
     client = DipClient(session=session)
 
@@ -287,7 +302,11 @@ async def test_fetch_hdo_raises_dip_fetch_error_on_missing_data():
     mock_signals_cm.__aenter__ = AsyncMock(return_value=mock_signals_response)
     mock_signals_cm.__aexit__ = AsyncMock(return_value=None)
 
-    session.get = Mock(side_effect=lambda url, *args, **kwargs: mock_token_cm if "token/get" in url else mock_signals_cm)
+    session.get = Mock(
+        side_effect=lambda url, *args, **kwargs: (
+            mock_token_cm if "token/get" in url else mock_signals_cm
+        )
+    )
 
     client = DipClient(session=session)
 
@@ -318,7 +337,9 @@ async def test_fetch_hdo_raises_on_connection_error():
     session = Mock()
 
     mock_cm = Mock()
-    mock_cm.__aenter__ = AsyncMock(side_effect=aiohttp.ClientConnectorError(Mock(), Mock()))
+    mock_cm.__aenter__ = AsyncMock(
+        side_effect=aiohttp.ClientConnectorError(Mock(), Mock())
+    )
     mock_cm.__aexit__ = AsyncMock(return_value=None)
 
     session.get = Mock(return_value=mock_cm)
@@ -372,7 +393,9 @@ async def test_fetch_hdo_uses_injected_session():
 
     mock_response = AsyncMock()
     mock_response.status = 200
-    mock_response.json = AsyncMock(return_value={"token": "test", "data": {"signal": "test"}})
+    mock_response.json = AsyncMock(
+        return_value={"token": "test", "data": {"signal": "test"}}
+    )
 
     mock_cm = Mock()
     mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
@@ -392,7 +415,12 @@ async def test_fetch_hdo_preserves_return_format():
     """Returns dict with keys: signal, casy, den, datum"""
     session = Mock()
 
-    expected_data = {"signal": "EVV2", "casy": ["08:00-16:00"], "den": "pondělí", "datum": "16.02.2026"}
+    expected_data = {
+        "signal": "EVV2",
+        "casy": ["08:00-16:00"],
+        "den": "pondělí",
+        "datum": "16.02.2026",
+    }
 
     mock_token_response = AsyncMock()
     mock_token_response.status = 200
@@ -410,7 +438,11 @@ async def test_fetch_hdo_preserves_return_format():
     mock_signals_cm.__aenter__ = AsyncMock(return_value=mock_signals_response)
     mock_signals_cm.__aexit__ = AsyncMock(return_value=None)
 
-    session.get = Mock(side_effect=lambda url, *args, **kwargs: mock_token_cm if "token/get" in url else mock_signals_cm)
+    session.get = Mock(
+        side_effect=lambda url, *args, **kwargs: (
+            mock_token_cm if "token/get" in url else mock_signals_cm
+        )
+    )
 
     client = DipClient(session=session)
     result = await client.fetch_hdo(SAMPLE_COOKIES, ean="123")

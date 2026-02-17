@@ -6,15 +6,21 @@ Covers:
 - Next switch time calculation
 - Edge cases (midnight wrap, malformed data, empty signals)
 """
+
 from __future__ import annotations
 
 from datetime import datetime, time
 
 import pytest
 
-from addon.src.hdo_parser import (HdoData, _find_next_switch,
-                                  _is_in_low_tariff, _parse_time_ranges,
-                                  _time_from_str, parse_hdo_signals)
+from addon.src.hdo_parser import (
+    HdoData,
+    _find_next_switch,
+    _is_in_low_tariff,
+    _parse_time_ranges,
+    _time_from_str,
+    parse_hdo_signals,
+)
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 

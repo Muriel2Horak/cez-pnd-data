@@ -42,7 +42,9 @@ def ensure_evidence_dir() -> Path:
     return evidence_dir
 
 
-def build_pnd_payload(assembly_id: int, date_from: str, date_to: str, electrometer_id: str) -> dict:
+def build_pnd_payload(
+    assembly_id: int, date_from: str, date_to: str, electrometer_id: str
+) -> dict:
     """Build PND API payload."""
     return {
         "format": "table",
@@ -89,12 +91,17 @@ async def async_main() -> int:
             page = await context.new_page()
 
             # Navigate to PND
-            await page.goto("https://pnd.cezdistribuce.cz/cezpnd2", wait_until="domcontentloaded")
-            
+            await page.goto(
+                "https://pnd.cezdistribuce.cz/cezpnd2", wait_until="domcontentloaded"
+            )
+
             try:
                 await page.wait_for_selector('input[name="username"]', timeout=30_000)
             except Exception:
-                await page.goto("https://dip.cezdistribuce.cz/irj/portal?zpnd", wait_until="domcontentloaded")
+                await page.goto(
+                    "https://dip.cezdistribuce.cz/irj/portal?zpnd",
+                    wait_until="domcontentloaded",
+                )
                 await page.wait_for_selector('input[name="username"]', timeout=120_000)
 
             # Find login form (might be in iframe)
@@ -107,20 +114,28 @@ async def async_main() -> int:
             # Fill credentials
             await login_target.fill('input[name="username"]', email)
             await login_target.fill('input[name="password"]', password)
-            
+
             # Submit
-            submit = login_target.locator('input[type="submit"], button[type="submit"]').first
+            submit = login_target.locator(
+                'input[type="submit"], button[type="submit"]'
+            ).first
             await submit.click()
-            
+
             # Wait for success
             import re
-            success_pattern = re.compile(r".*/(cezpnd2/dashboard/|cezpnd2/external/dashboard/view|irj/portal).*")
+
+            success_pattern = re.compile(
+                r".*/(cezpnd2/dashboard/|cezpnd2/external/dashboard/view|irj/portal).*"
+            )
             await page.wait_for_url(success_pattern, timeout=120_000)
-            
+
             print("✓ Login successful")
 
             # Navigate to PND dashboard to establish session
-            await page.goto("https://pnd.cezdistribuce.cz/cezpnd2/dashboard/view", wait_until="domcontentloaded")
+            await page.goto(
+                "https://pnd.cezdistribuce.cz/cezpnd2/dashboard/view",
+                wait_until="domcontentloaded",
+            )
             await page.wait_for_timeout(5000)  # Wait for session
 
             # Step 2: Fetch PND data using Playwright's request API
@@ -128,11 +143,11 @@ async def async_main() -> int:
             today = datetime.now()
             date_from = today.strftime("%d.%m.%Y 00:00")
             date_to = today.strftime("%d.%m.%Y 23:59")
-            
+
             payload = build_pnd_payload(-1003, date_from, date_to, electrometer_id)
-            
+
             print(f"  Payload: {json.dumps(payload, indent=2)}")
-            
+
             # WAF warmup: Send JSON request first (will fail with 400, but sets WAF cookies/state)
             print("  WAF warmup (JSON request)...")
             try:
@@ -144,19 +159,19 @@ async def async_main() -> int:
                 print(f"    Warmup status: {warmup_response.status} (expected 400)")
             except Exception as e:
                 print(f"    Warmup failed: {e} (expected)")
-            
+
             await page.wait_for_timeout(1000)
-            
+
             # Now the actual form request (should work after warmup)
             print("  Sending form request...")
             response = await context.request.post(
                 PND_DATA_URL,
                 data=payload,
             )
-            
+
             print(f"  Response status: {response.status}")
             print(f"  Response URL: {response.url}")
-            
+
             raw_text = await response.text()
             print(f"  Response length: {len(raw_text)} chars")
             try:
@@ -166,12 +181,11 @@ async def async_main() -> int:
                 print(f"  Response preview: {raw_text[:1000]}")
                 return 1
 
-            
             if response.status != 200:
                 print(f"✗ PND API returned {response.status}")
                 print(f"  Response preview: {raw_text[:500]}")
                 return 1
-            
+
             print(f"✓ PND data fetched, size: {pnd_data.get('size', 0)}")
 
             # Step 3: Fetch HDO data (optional)
@@ -185,12 +199,13 @@ async def async_main() -> int:
                     if token_resp.status == 200:
                         token_data = await token_resp.json()
                         token = token_data.get("token")
-                        
+
                         # Get signals
-                        signals_url = f"{DIP_PORTAL_URL}/{DIP_SIGNALS_PATH.format(ean=ean)}"
+                        signals_url = (
+                            f"{DIP_PORTAL_URL}/{DIP_SIGNALS_PATH.format(ean=ean)}"
+                        )
                         signals_resp = await context.request.get(
-                            signals_url,
-                            headers={"x-request-token": token}
+                            signals_url, headers={"x-request-token": token}
                         )
                         if signals_resp.status == 200:
                             signals_data = await signals_resp.json()
@@ -257,6 +272,7 @@ async def async_main() -> int:
     except Exception as exc:
         print(f"\n✗ FATAL ERROR: {exc}")
         import traceback
+
         traceback.print_exc()
         return 1
 

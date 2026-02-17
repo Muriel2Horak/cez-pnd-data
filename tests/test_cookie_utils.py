@@ -32,7 +32,7 @@ def test_cookie_with_extra_fields():
             "value": "xyz789",
             "expires": 1704067200,
             "domain": "example.com",
-            "path": "/"
+            "path": "/",
         }
     ]
     result = playwright_cookies_to_header(cookies)
@@ -43,7 +43,7 @@ def test_special_characters_in_values():
     """Test special characters in values are handled correctly"""
     cookies = [
         {"name": "test", "value": "value with spaces"},
-        {"name": "unicode", "value": "nějaký český text"}
+        {"name": "unicode", "value": "nějaký český text"},
     ]
     result = playwright_cookies_to_header(cookies)
     assert result == "test=value with spaces; unicode=nějaký český text"
@@ -54,7 +54,7 @@ def test_order_preservation():
     cookies = [
         {"name": "first", "value": "1"},
         {"name": "second", "value": "2"},
-        {"name": "third", "value": "3"}
+        {"name": "third", "value": "3"},
     ]
     result = playwright_cookies_to_header(cookies)
     assert result == "first=1; second=2; third=3"

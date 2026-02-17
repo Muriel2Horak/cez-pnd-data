@@ -16,6 +16,7 @@ Input format (from DIP API):
 Low-tariff windows are the time ranges listed in "casy".
 High-tariff is everything outside those windows.
 """
+
 from __future__ import annotations
 
 import logging

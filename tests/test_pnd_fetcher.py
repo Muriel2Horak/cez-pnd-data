@@ -8,7 +8,12 @@ import pytest
 from addon.src.main import PND_DATA_URL, PndFetcher, build_pnd_payload
 
 SAMPLE_COOKIES: list[dict[str, Any]] = [
-    {"name": "JSESSIONID", "value": "test-session", "domain": ".cezdistribuce.cz", "path": "/"},
+    {
+        "name": "JSESSIONID",
+        "value": "test-session",
+        "domain": ".cezdistribuce.cz",
+        "path": "/",
+    },
 ]
 
 SAMPLE_RESPONSE: dict[str, Any] = {
@@ -53,7 +58,9 @@ def _build_playwright_mocks(
 class TestBuildPndPayload:
 
     def test_builds_correct_payload_structure(self) -> None:
-        payload = build_pnd_payload(-1003, "14.02.2026 00:00", "14.02.2026 00:00", "784703")
+        payload = build_pnd_payload(
+            -1003, "14.02.2026 00:00", "14.02.2026 00:00", "784703"
+        )
         assert payload == {
             "format": "table",
             "idAssembly": -1003,
@@ -71,7 +78,9 @@ class TestBuildPndPayload:
 
     def test_different_assembly_ids(self) -> None:
         for assembly_id in [-1003, -1012, -1011, -1021, -1022, -1027]:
-            payload = build_pnd_payload(assembly_id, "01.01.2026 00:00", "01.01.2026 00:00", "123")
+            payload = build_pnd_payload(
+                assembly_id, "01.01.2026 00:00", "01.01.2026 00:00", "123"
+            )
             assert payload["idAssembly"] == assembly_id
 
 
@@ -81,7 +90,9 @@ class TestPndFetcher:
     async def test_fetch_posts_to_pnd_url(self) -> None:
         mock_pw, mock_browser, mock_context = _build_playwright_mocks()
 
-        with patch("addon.src.main._get_async_playwright", return_value=lambda: mock_pw):
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_pw
+        ):
             fetcher = PndFetcher(electrometer_id="784703")
             await fetcher.fetch(
                 SAMPLE_COOKIES,
@@ -104,7 +115,9 @@ class TestPndFetcher:
     async def test_fetch_adds_cookies_to_context(self) -> None:
         mock_pw, mock_browser, mock_context = _build_playwright_mocks()
 
-        with patch("addon.src.main._get_async_playwright", return_value=lambda: mock_pw):
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_pw
+        ):
             fetcher = PndFetcher()
             await fetcher.fetch(
                 SAMPLE_COOKIES,
@@ -119,7 +132,9 @@ class TestPndFetcher:
     async def test_fetch_returns_parsed_json(self) -> None:
         mock_pw, _, _ = _build_playwright_mocks()
 
-        with patch("addon.src.main._get_async_playwright", return_value=lambda: mock_pw):
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_pw
+        ):
             fetcher = PndFetcher(electrometer_id="784703")
             result = await fetcher.fetch(
                 SAMPLE_COOKIES,
@@ -135,7 +150,9 @@ class TestPndFetcher:
     async def test_fetch_sends_correct_payload(self) -> None:
         mock_pw, _, mock_context = _build_playwright_mocks()
 
-        with patch("addon.src.main._get_async_playwright", return_value=lambda: mock_pw):
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_pw
+        ):
             fetcher = PndFetcher(electrometer_id="784703")
             await fetcher.fetch(
                 SAMPLE_COOKIES,
@@ -154,7 +171,9 @@ class TestPndFetcher:
     async def test_browser_closed_after_success(self) -> None:
         mock_pw, mock_browser, mock_context = _build_playwright_mocks()
 
-        with patch("addon.src.main._get_async_playwright", return_value=lambda: mock_pw):
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_pw
+        ):
             fetcher = PndFetcher()
             await fetcher.fetch(
                 SAMPLE_COOKIES,
@@ -169,9 +188,13 @@ class TestPndFetcher:
     @pytest.mark.asyncio
     async def test_browser_closed_after_error(self) -> None:
         mock_pw, mock_browser, mock_context = _build_playwright_mocks()
-        mock_context.request.post = AsyncMock(side_effect=ConnectionError("Network error"))
+        mock_context.request.post = AsyncMock(
+            side_effect=ConnectionError("Network error")
+        )
 
-        with patch("addon.src.main._get_async_playwright", return_value=lambda: mock_pw):
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_pw
+        ):
             fetcher = PndFetcher()
             with pytest.raises(ConnectionError):
                 await fetcher.fetch(
@@ -188,7 +211,9 @@ class TestPndFetcher:
     async def test_electrometer_id_passed_in_payload(self) -> None:
         mock_pw, _, mock_context = _build_playwright_mocks()
 
-        with patch("addon.src.main._get_async_playwright", return_value=lambda: mock_pw):
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_pw
+        ):
             fetcher = PndFetcher(electrometer_id="999999")
             await fetcher.fetch(
                 SAMPLE_COOKIES,
@@ -204,7 +229,9 @@ class TestPndFetcher:
     async def test_no_electrometer_id_sends_none(self) -> None:
         mock_pw, _, mock_context = _build_playwright_mocks()
 
-        with patch("addon.src.main._get_async_playwright", return_value=lambda: mock_pw):
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_pw
+        ):
             fetcher = PndFetcher()
             await fetcher.fetch(
                 SAMPLE_COOKIES,

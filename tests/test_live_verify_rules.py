@@ -158,7 +158,12 @@ class TestPndValidation:
 
     def test_empty_signal_fails(self):
         """Empty signal -> invalid."""
-        data = {"signal": "", "casy": ["08:00-16:00"], "den": "pondělí", "datum": "16.02.2026"}
+        data = {
+            "signal": "",
+            "casy": ["08:00-16:00"],
+            "den": "pondělí",
+            "datum": "16.02.2026",
+        }
         result = validate_hdo_data(data)
         assert result["valid"] is False
         assert "HDO: signal is missing or empty" in result["errors"]

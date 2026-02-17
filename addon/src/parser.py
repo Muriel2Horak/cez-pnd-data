@@ -53,14 +53,10 @@ class ParsedReading:
 # "+A/784703", "-A/784703", "Rv/784703" (Tab 00)
 # "+A d/784703", "-A d/784703" (Tab 07/08)
 # "+E/784703", "-E/784703", "+E_NT/784703", "+E_VT/784703" (Tab 17)
-_METER_ID_PATTERN = re.compile(
-    r"^(?:\+A|-A|Rv|\+A d|-A d|\+E|-E|\+E_NT|\+E_VT)/(\d+)$"
-)
+_METER_ID_PATTERN = re.compile(r"^(?:\+A|-A|Rv|\+A d|-A d|\+E|-E|\+E_NT|\+E_VT)/(\d+)$")
 
 # Czech timestamp: DD.MM.YYYY HH:MM
-_TIMESTAMP_PATTERN = re.compile(
-    r"^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})$"
-)
+_TIMESTAMP_PATTERN = re.compile(r"^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})$")
 
 
 def parse_czech_decimal(value: Optional[str]) -> Optional[float]:
@@ -216,9 +212,7 @@ class CezDataParser:
         """The detected electrometer ID, or None."""
         return self._electrometer_id
 
-    def _extract_cell_value(
-        self, row: dict, col_id: Optional[str]
-    ) -> Optional[str]:
+    def _extract_cell_value(self, row: dict, col_id: Optional[str]) -> Optional[str]:
         """Get the 'v' string from a cell, or None if missing."""
         if col_id is None:
             return None
@@ -275,24 +269,16 @@ class CezDataParser:
                         self._extract_cell_value(row, self.daily_production_col_id)
                     ),
                     register_consumption_kwh=parse_czech_decimal(
-                        self._extract_cell_value(
-                            row, self.register_consumption_col_id
-                        )
+                        self._extract_cell_value(row, self.register_consumption_col_id)
                     ),
                     register_production_kwh=parse_czech_decimal(
-                        self._extract_cell_value(
-                            row, self.register_production_col_id
-                        )
+                        self._extract_cell_value(row, self.register_production_col_id)
                     ),
                     register_low_tariff_kwh=parse_czech_decimal(
-                        self._extract_cell_value(
-                            row, self.register_low_tariff_col_id
-                        )
+                        self._extract_cell_value(row, self.register_low_tariff_col_id)
                     ),
                     register_high_tariff_kwh=parse_czech_decimal(
-                        self._extract_cell_value(
-                            row, self.register_high_tariff_col_id
-                        )
+                        self._extract_cell_value(row, self.register_high_tariff_col_id)
                     ),
                 )
             )

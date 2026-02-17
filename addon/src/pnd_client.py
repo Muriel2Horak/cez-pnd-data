@@ -14,6 +14,7 @@ from .orchestrator import SessionExpiredError
 class PndFetchError(Exception):
     pass
 
+
 class PndClient:
     PND_API_URL = "https://pnd.cezdistribuce.cz/cezpnd2/external/data"
     DEFAULT_TIMEOUT = 30
@@ -22,7 +23,14 @@ class PndClient:
         self._electrometer_id = electrometer_id
         self._session = session
 
-    async def fetch_data(self, cookies: list[dict[str, Any]], *, assembly_id: int, date_from: str, date_to: str) -> dict[str, Any]:
+    async def fetch_data(
+        self,
+        cookies: list[dict[str, Any]],
+        *,
+        assembly_id: int,
+        date_from: str,
+        date_to: str,
+    ) -> dict[str, Any]:
         payload = {
             "format": "table",
             "idAssembly": assembly_id,
@@ -36,10 +44,16 @@ class PndClient:
         headers = {
             "Cookie": playwright_cookies_to_header(cookies),
             "User-Agent": DEFAULT_USER_AGENT,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
         try:
-            async with self._session.post(self.PND_API_URL, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT), allow_redirects=False) as resp:
+            async with self._session.post(
+                self.PND_API_URL,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=self.DEFAULT_TIMEOUT),
+                allow_redirects=False,
+            ) as resp:
                 if resp.status == 401:
                     raise SessionExpiredError("PND API returned 401")
                 if resp.status != 200:

@@ -8,6 +8,7 @@ Simulates the full add-on lifecycle without a real MQTT broker or CEZ backend:
 
 Uses the retained sample payload from evidence/ for deterministic assertions.
 """
+
 from __future__ import annotations
 
 import json
@@ -19,17 +20,18 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from addon.src.auth import AuthSession, PlaywrightAuthClient
-from addon.src.mqtt_publisher import (AVAILABILITY_TOPIC_TEMPLATE,
-                                      CONFIG_TOPIC_TEMPLATE,
-                                      STATE_TOPIC_TEMPLATE, MqttPublisher,
-                                      build_discovery_payload,
-                                      get_hdo_sensor_definitions,
-                                      get_sensor_definitions)
-from addon.src.orchestrator import (ASSEMBLY_CONFIGS, Orchestrator,
-                                    OrchestratorConfig)
+from addon.src.mqtt_publisher import (
+    AVAILABILITY_TOPIC_TEMPLATE,
+    CONFIG_TOPIC_TEMPLATE,
+    STATE_TOPIC_TEMPLATE,
+    MqttPublisher,
+    build_discovery_payload,
+    get_hdo_sensor_definitions,
+    get_sensor_definitions,
+)
+from addon.src.orchestrator import ASSEMBLY_CONFIGS, Orchestrator, OrchestratorConfig
 from addon.src.parser import CezDataParser, detect_electrometer_id
-from addon.src.session_manager import (Credentials, CredentialsProvider,
-                                       SessionStore)
+from addon.src.session_manager import Credentials, CredentialsProvider, SessionStore
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 
@@ -94,7 +96,9 @@ class TestFullPipelineSmoke:
 
         # ── Step 2: Parse CEZ data ────────────────────────────────
         meter_id = detect_electrometer_id(sample_payload)
-        assert meter_id is not None, "Meter ID must be auto-detected from sample payload"
+        assert (
+            meter_id is not None
+        ), "Meter ID must be auto-detected from sample payload"
         assert meter_id == "784703"
 
         parser = CezDataParser(sample_payload)
@@ -121,7 +125,8 @@ class TestFullPipelineSmoke:
         # Verify online availability published
         avail_topic = AVAILABILITY_TOPIC_TEMPLATE.format(meter_id=meter_id)
         online_calls = [
-            c for c in mock_mqtt_client.publish.call_args_list
+            c
+            for c in mock_mqtt_client.publish.call_args_list
             if c[0][0] == avail_topic and c[1].get("payload") == "online"
         ]
         assert len(online_calls) >= 1, "Must publish 'online' after connect"
@@ -140,7 +145,8 @@ class TestFullPipelineSmoke:
                 meter_id=meter_id, key=sensor.key
             )
             matching = [
-                c for c in mock_mqtt_client.publish.call_args_list
+                c
+                for c in mock_mqtt_client.publish.call_args_list
                 if c[0][0] == config_topic
             ]
             assert len(matching) == 1, f"Discovery missing for {sensor.key}"
@@ -174,7 +180,8 @@ class TestFullPipelineSmoke:
         for key in ("consumption", "production", "reactive"):
             state_topic = STATE_TOPIC_TEMPLATE.format(meter_id=meter_id, key=key)
             state_calls = [
-                c for c in mock_mqtt_client.publish.call_args_list
+                c
+                for c in mock_mqtt_client.publish.call_args_list
                 if c[0][0] == state_topic
             ]
             assert len(state_calls) == 1, f"State missing for {key}"
@@ -188,7 +195,8 @@ class TestFullPipelineSmoke:
         publisher.stop()
 
         offline_calls = [
-            c for c in mock_mqtt_client.publish.call_args_list
+            c
+            for c in mock_mqtt_client.publish.call_args_list
             if c[0][0] == avail_topic and c[1].get("payload") == "offline"
         ]
         assert len(offline_calls) >= 1, "Must publish 'offline' on stop"
@@ -428,7 +436,9 @@ class TestFull17SensorPipeline:
 
         async def mock_fetcher(cookies: Any, **kwargs: Any) -> dict:
             assembly_id = kwargs.get("assembly_id", 0)
-            return _ASSEMBLY_PAYLOADS.get(assembly_id, {"hasData": False, "columns": [], "values": []})
+            return _ASSEMBLY_PAYLOADS.get(
+                assembly_id, {"hasData": False, "columns": [], "values": []}
+            )
 
         meter_id = "784703"
         publisher = MqttPublisher(client=mock_mqtt_client, meter_id=meter_id)
@@ -466,14 +476,15 @@ class TestFull17SensorPipeline:
         for key, expected_value in expected_sensors.items():
             state_topic = STATE_TOPIC_TEMPLATE.format(meter_id=meter_id, key=key)
             state_calls = [
-                c for c in mock_mqtt_client.publish.call_args_list
+                c
+                for c in mock_mqtt_client.publish.call_args_list
                 if c[0][0] == state_topic
             ]
             assert len(state_calls) == 1, f"State missing for {key}"
             published_value = float(state_calls[0][1].get("payload"))
-            assert published_value == pytest.approx(expected_value), (
-                f"{key}: expected {expected_value}, got {published_value}"
-            )
+            assert published_value == pytest.approx(
+                expected_value
+            ), f"{key}: expected {expected_value}, got {published_value}"
 
     @pytest.mark.asyncio
     async def test_discovery_publishes_17_configs(
@@ -490,9 +501,12 @@ class TestFull17SensorPipeline:
         assert len(all_defs) == 17
 
         for sensor in all_defs:
-            config_topic = CONFIG_TOPIC_TEMPLATE.format(meter_id=meter_id, key=sensor.key)
+            config_topic = CONFIG_TOPIC_TEMPLATE.format(
+                meter_id=meter_id, key=sensor.key
+            )
             matching = [
-                c for c in mock_mqtt_client.publish.call_args_list
+                c
+                for c in mock_mqtt_client.publish.call_args_list
                 if c[0][0] == config_topic
             ]
             assert len(matching) == 1, f"Discovery missing for {sensor.key}"
@@ -514,7 +528,9 @@ class TestFull17SensorPipeline:
 
         async def mock_fetcher(cookies: Any, **kwargs: Any) -> dict:
             assembly_id = kwargs.get("assembly_id", 0)
-            return _ASSEMBLY_PAYLOADS.get(assembly_id, {"hasData": False, "columns": [], "values": []})
+            return _ASSEMBLY_PAYLOADS.get(
+                assembly_id, {"hasData": False, "columns": [], "values": []}
+            )
 
         hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
 
@@ -540,11 +556,17 @@ class TestFull17SensorPipeline:
 
         await orch.run_once()
 
-        hdo_keys = ["hdo_low_tariff_active", "hdo_next_switch", "hdo_schedule_today", "hdo_signal"]
+        hdo_keys = [
+            "hdo_low_tariff_active",
+            "hdo_next_switch",
+            "hdo_schedule_today",
+            "hdo_signal",
+        ]
         for key in hdo_keys:
             state_topic = STATE_TOPIC_TEMPLATE.format(meter_id=meter_id, key=key)
             state_calls = [
-                c for c in mock_mqtt_client.publish.call_args_list
+                c
+                for c in mock_mqtt_client.publish.call_args_list
                 if c[0][0] == state_topic
             ]
             assert len(state_calls) == 1, f"HDO state missing for {key}"
@@ -568,7 +590,9 @@ class TestFull17SensorPipeline:
 
         async def mock_fetcher(cookies: Any, **kwargs: Any) -> dict:
             assembly_id = kwargs.get("assembly_id", 0)
-            return _ASSEMBLY_PAYLOADS.get(assembly_id, {"hasData": False, "columns": [], "values": []})
+            return _ASSEMBLY_PAYLOADS.get(
+                assembly_id, {"hasData": False, "columns": [], "values": []}
+            )
 
         hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
 
@@ -598,9 +622,11 @@ class TestFull17SensorPipeline:
         pnd_keys = [s.key for s in get_sensor_definitions()]
         hdo_keys = [s.key for s in get_hdo_sensor_definitions()]
         for key in pnd_keys + hdo_keys:
-            all_expected_topics.add(STATE_TOPIC_TEMPLATE.format(meter_id=meter_id, key=key))
+            all_expected_topics.add(
+                STATE_TOPIC_TEMPLATE.format(meter_id=meter_id, key=key)
+            )
 
         published_topics = {c[0][0] for c in mock_mqtt_client.publish.call_args_list}
-        assert all_expected_topics.issubset(published_topics), (
-            f"Missing topics: {all_expected_topics - published_topics}"
-        )
+        assert all_expected_topics.issubset(
+            published_topics
+        ), f"Missing topics: {all_expected_topics - published_topics}"

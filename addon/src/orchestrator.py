@@ -195,7 +195,9 @@ class Orchestrator:
             yesterday = date_obj - timedelta(days=1)
             yesterday_from = yesterday.strftime("%d.%m.%Y")
             yesterday_to = date_from
-            payload = await self._fetch_assembly(cookies, config["id"], yesterday_from, yesterday_to)
+            payload = await self._fetch_assembly(
+                cookies, config["id"], yesterday_from, yesterday_to
+            )
         return payload
 
     async def _fetch_all_assemblies(
@@ -268,9 +270,7 @@ class Orchestrator:
                     )
                     return None
 
-                return await self._fetch_with_retry(
-                    cookies, _reauthed=True
-                )
+                return await self._fetch_with_retry(cookies, _reauthed=True)
 
             except Exception as exc:
                 last_error = exc
