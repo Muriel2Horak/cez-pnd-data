@@ -52,9 +52,9 @@ class PlaywrightAuthClient:
     async def _login_via_playwright(
         self, credentials: Credentials
     ) -> list[dict[str, Any]]:
-        from playwright.async_api import (
+        from playwright.async_api import (  # type: ignore[import-not-found]
             async_playwright,
-        )  # type: ignore[import-not-found]
+        )
 
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=True)
