@@ -85,7 +85,7 @@ class PlaywrightAuthClient:
             await _wait_for_login_success(page)
             cookies = await context.cookies()
             await browser.close()
-            return cookies
+            return [dict(c) for c in cookies]
 
 
 async def _wait_for_login_success(page: Any) -> None:
