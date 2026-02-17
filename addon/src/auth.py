@@ -7,7 +7,6 @@ from typing import Any, Awaitable, Callable
 from .session_manager import (
     Credentials,
     CredentialsProvider,
-    SessionState,
     SessionStore,
 )
 

@@ -9,35 +9,17 @@ import logging
 import os
 import signal
 import sys
-from typing import Any, Dict, Optional, TypedDict, Union
+from typing import Any, Dict, Optional
 
 import paho.mqtt.client as mqtt_client
+import aiohttp
 
 from .auth import PlaywrightAuthClient
 from .dip_client import DipClient
 from .mqtt_publisher import MqttPublisher
 from .orchestrator import Orchestrator, OrchestratorConfig
-from .session_manager import Credentials, CredentialsProvider, SessionStore
-
-
-class CezConfig(TypedDict):
-    email: str
-    password: str
-    electrometer_id: Optional[str]
-    ean: str
-
-
-class MqttConfig(TypedDict):
-    host: str
-    port: int
-    username: str
-    password: str
-
-
-import aiohttp
-
-from .dip_client import DipClient
 from .pnd_client import PndClient
+from .session_manager import CredentialsProvider, SessionStore
 
 PND_DATA_URL = "https://pnd.cezdistribuce.cz/cezpnd2/external/data"
 
@@ -197,7 +179,7 @@ async def main():
     config = create_config()
 
     # Log configuration (excluding password)
-    logger.info(f"Starting CEZ PND add-on")
+    logger.info("Starting CEZ PND add-on")
     logger.info(f"Email: {config['cez']['email']}")
     logger.info(f"Electrometer ID: {config['cez']['electrometer_id'] or 'auto-detect'}")
     logger.info(f"MQTT Host: {config['mqtt']['host']}:{config['mqtt']['port']}")
@@ -260,11 +242,8 @@ async def main():
 
         return orchestrator
 
-    # Create orchestrator
-    orchestrator = None
-
     # Set up signal handlers for graceful shutdown
-    loop = asyncio.get_running_loop()
+    _ = asyncio.get_running_loop()
     shutdown_event = asyncio.Event()
 
     def signal_handler(signum, frame):
@@ -276,8 +255,7 @@ async def main():
     signal.signal(signal.SIGINT, signal_handler)
 
     try:
-        # Start orchestrator loop
-        orchestrator = await run_orchestrator_with_session()
+        _ = await run_orchestrator_with_session()
     except asyncio.CancelledError:
         logger.info("Orchestrator cancelled")
     except KeyboardInterrupt:
