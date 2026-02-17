@@ -10,11 +10,21 @@ RUN apk add --no-cache \
     gcc \
     musl-dev \
     libffi-dev \
-    openssl-dev
+    openssl-dev \
+    chromium \
+    chromium-chromedriver \
+    nss \
+    freetype \
+    freetype-dev \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
 
 # Install required Python packages
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r /app/requirements.txt
+
+RUN playwright install chromium --with-deps
 
 # Copy application source code
 COPY src/ /app/src/

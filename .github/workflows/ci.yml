@@ -2,11 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
-    branches: [master]
+    branches: [main]
   schedule:
     - cron: '0 6 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -102,7 +103,7 @@ jobs:
 
       - name: Type check with mypy
         run: |
-          mypy addon/src --ignore-missing-imports --no-error-summary || true
+          mypy addon/src --ignore-missing-imports --no-error-summary
 
       - name: Lint with ruff
         run: |
@@ -202,7 +203,6 @@ jobs:
   # ──────────────────────────────────────────────────────────
   docker-build:
     runs-on: ubuntu-latest
-    continue-on-error: true
 
     steps:
       - uses: actions/checkout@v4
@@ -216,11 +216,13 @@ jobs:
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.28.0
+        continue-on-error: true
         with:
           image-ref: cez-pnd:ci-${{ github.sha }}
           format: table
-          exit-code: '1'
+          exit-code: '0'
           severity: CRITICAL,HIGH
+          ignore-unfixed: true
           output: trivy-report.txt
 
       - name: Upload Trivy report

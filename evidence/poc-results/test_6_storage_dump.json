@@ -1,0 +1,391 @@
+{
+  "test_name": "test_6_storage_dump",
+  "timestamp": "2026-02-16T21:57:44.303220",
+  "login": {
+    "success": true,
+    "final_url": "https://dip.cezdistribuce.cz/irj/portal/prehled-uctu/"
+  },
+  "cookies": {
+    "all_cookies": [
+      {
+        "name": "DISSESSION",
+        "value": "7178f805-075b-4cc1-a2d0-bf000d7d24e3",
+        "domain": "cas.cez.cz",
+        "path": "/cas",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "None"
+      },
+      {
+        "name": "TGC",
+        "value": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9.ZXlKNmFYQWlPaUpFUlVZaUxDSmhiR2NpT2lKa2FYSWlMQ0psYm1NaU9pSkJNVEk0UTBKRExVaFRNalUySWl3aVkzUjVJam9pU2xkVUlpd2lkSGx3SWpvaVNsZFVJbjAuLnltQ1Zra3FfZzJXb1hGd3M4d0dGYVEuOGhINXM2TnlEUXlDOXJHb0Zzd2Z2NXpMZHRtOWtXOWtSYW9pay1sQVJUX053empMZWZWSUM0MWZHWWRXUnExR0NiUk9PSjd1Y29heGJBY0l1cDR4SmdWQ1VZRDFOMXhRWHVZbDZ0VGFDZjNyNE5Pai01RkxPMi11aGdfbnNKVnhaajhIMXVNM0lBdWpKVEJqUllpU1REY1VUSWEwLVprSjJCczREbVJGMGVKbncxT1Uya0VCenNMQ2diazY1SlpjQ05MV2lzTVJJdW1ObGhzZTVBWGdFYnloU3Q1TWNHRjVVb3RKZG9RejZTMHhJLTZJZml6WmMyU0lnXzg3eUF5RjY5MnlJYnFPUEc2aDNkQU5sRGZGUUEuS0o4bGRzQTRlQlVXdldyYlpoYXpVQQ.a5nN4FR0FrHEZq_ieX2k0fpYf8WH3nABAJ3WHzcZmBY5gmzhUytTM5Qaw3uygqODoUK4iG-FqH2fVA-vcao-EQ",
+        "domain": "cas.cez.cz",
+        "path": "/cas",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "TS0177a524",
+        "value": "01604099e5af1a113a812e387f658c4bd7ab7af3ba4cdb76ef4b1ffaf08c1289968712b5912df7bf0d3948efc5277ed0dca25ffec38d7a83770a403b8a7df55e502fbe08309c3a62a222448dedb0c0b9ca3ac78d01",
+        "domain": "cas.cez.cz",
+        "path": "/cas",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "TS01d523a0",
+        "value": "01604099e55407173ca7b4d7b711911e20f15053e0b04180987c7c25e13424a873f7bb7b87ecdace5dc9c0943d30fd6320ed5867fecdd99cf1682ab9a7d34b71120e475a62",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/irj",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "PortalAlias",
+        "value": "portal",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "pac4jCsrfToken",
+        "value": "ae89445b-e1f0-4c9d-bf85-2e824414df19",
+        "domain": ".cas.cez.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "TS0139e499",
+        "value": "01604099e59c2f25c6287cd12cdf4f630cfb5d036e4cdb76ef4b1ffaf08c1289968712b5911ad3acc5e84bfce1e0101b01428e93a4",
+        "domain": "cas.cez.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "TS01493c2a",
+        "value": "01604099e59d9595c1db944bedc427fe96ba2e91e74cdb76ef4b1ffaf08c1289968712b59185f735ac511d0ff3d5f94f7d942d0b222c143e41026886f7efe8476b09dde48e",
+        "domain": ".cas.cez.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "TS0139e499030",
+        "value": "01ac25f900f714bb6d17776c86a15f9a0cb4664923e55f3d2c47b7e8bca936762df440f4bb1fbfc836d9163911566316832c22c823",
+        "domain": "cas.cez.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "saplb_*",
+        "value": "(J2EE133342020)133342052",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "DIP_PARTNER",
+        "value": "0011436005",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Strict"
+      },
+      {
+        "name": "DIP_PARTNER_ENV",
+        "value": "D",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Strict"
+      },
+      {
+        "name": "DIP_VERSION",
+        "value": "1",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Strict"
+      },
+      {
+        "name": "JSESSIONID",
+        "value": "EumLFtvAauJeBwF6vIi4pJ6ZwD5onAFko_IH_SAPxdhvL9Mbf9XI6Z9trkNu2cBC",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "JSESSIONMARKID",
+        "value": "KKex0gT9rL3eKY-urnuXSRYYRgrSMg3w8k62Sj8gc",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "TS0120452f",
+        "value": "01604099e5a992d9607ecac3bfa33a17e6ac594bccb04180987c7c25e13424a873f7bb7b8790c8e68f1e09a57cea413ebb3b57f751f2214ff804326470c2214b3bb2ebef11c16f3aa1174c30a29a3b3872861b4818f0a035fd0c147e145402c991cb1f40168683f7fca35ef7581ce7bc97d7df610378b9209db5fc9e46d544e5ccca85a17675b6a609c7dd71bf3a240e863e065f70412e4295b4fc82a013b16f3eefcfa3a4",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "TS907680a2027",
+        "value": "08eef273b2ab20006e573c936d8eb740f8b1b6730d616e5ae15b1f3e23d4be630d9c3864371a901e08f89632d9113000d7f12eec801a11af1657cee138b848d3d94a8cd73042a1affb9fdeb85c23c4f9b7ab608bcda9a891381e47b4dc31b225",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "JSESSIONID",
+        "value": "YWNlNDE1YjEtNTFkOC00NTM1LTlkNGMtMGUwYTAzZGFiMTI3",
+        "domain": "pnd.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "BIGipServerpool_wls_cezpnd2",
+        "value": "rd506o00000000000000000000ffffac1dce85o8225",
+        "domain": "pnd.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "BIGipServerpool-portal_9020",
+        "value": "!EWo+UTwvE6mZsIFzMJ7BsKRgYJqxKmXPoruaWfD4wSGCIaMtpweRnpmdlmqZOJ8NhnRcdbIYWJKfLeT4uGJheEk2Cy32dKiO0yqeF/Zpwg==",
+        "domain": "pnd.cezdistribuce.cz",
+        "path": "/",
+        "expires": 1771304330,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "TS01ed5b19",
+        "value": "01110d47910de30ca3849107065c9ad3cf4c68934335c9c077873d66fdaf29fd0b4b872da85399e242bc6b02f865e6d27e442b6b00fa1708f0bde5edd97d46607bd8bd3d7e9edd55a7e55f716394427c2376cbbf03d44962cb1453d94080145a44ba5fe36fd5588bebd1132a175ed4b306f081d02a49a6ac0c25feea6bfdbfc6144fc9042d",
+        "domain": ".pnd.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "Lax"
+      }
+    ],
+    "pnd_domain_cookies": [
+      {
+        "name": "JSESSIONID",
+        "value": "YWNlNDE1YjEtNTFkOC00NTM1LTlkNGMtMGUwYTAzZGFiMTI3",
+        "domain": "pnd.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "BIGipServerpool_wls_cezpnd2",
+        "value": "rd506o00000000000000000000ffffac1dce85o8225",
+        "domain": "pnd.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "BIGipServerpool-portal_9020",
+        "value": "!EWo+UTwvE6mZsIFzMJ7BsKRgYJqxKmXPoruaWfD4wSGCIaMtpweRnpmdlmqZOJ8NhnRcdbIYWJKfLeT4uGJheEk2Cy32dKiO0yqeF/Zpwg==",
+        "domain": "pnd.cezdistribuce.cz",
+        "path": "/",
+        "expires": 1771304330,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "TS01ed5b19",
+        "value": "01110d47910de30ca3849107065c9ad3cf4c68934335c9c077873d66fdaf29fd0b4b872da85399e242bc6b02f865e6d27e442b6b00fa1708f0bde5edd97d46607bd8bd3d7e9edd55a7e55f716394427c2376cbbf03d44962cb1453d94080145a44ba5fe36fd5588bebd1132a175ed4b306f081d02a49a6ac0c25feea6bfdbfc6144fc9042d",
+        "domain": ".pnd.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "Lax"
+      }
+    ],
+    "dip_domain_cookies": [
+      {
+        "name": "TS01d523a0",
+        "value": "01604099e55407173ca7b4d7b711911e20f15053e0b04180987c7c25e13424a873f7bb7b87ecdace5dc9c0943d30fd6320ed5867fecdd99cf1682ab9a7d34b71120e475a62",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/irj",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "PortalAlias",
+        "value": "portal",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "saplb_*",
+        "value": "(J2EE133342020)133342052",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "DIP_PARTNER",
+        "value": "0011436005",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Strict"
+      },
+      {
+        "name": "DIP_PARTNER_ENV",
+        "value": "D",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Strict"
+      },
+      {
+        "name": "DIP_VERSION",
+        "value": "1",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Strict"
+      },
+      {
+        "name": "JSESSIONID",
+        "value": "EumLFtvAauJeBwF6vIi4pJ6ZwD5onAFko_IH_SAPxdhvL9Mbf9XI6Z9trkNu2cBC",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "JSESSIONMARKID",
+        "value": "KKex0gT9rL3eKY-urnuXSRYYRgrSMg3w8k62Sj8gc",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": true,
+        "secure": true,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "TS0120452f",
+        "value": "01604099e5a992d9607ecac3bfa33a17e6ac594bccb04180987c7c25e13424a873f7bb7b8790c8e68f1e09a57cea413ebb3b57f751f2214ff804326470c2214b3bb2ebef11c16f3aa1174c30a29a3b3872861b4818f0a035fd0c147e145402c991cb1f40168683f7fca35ef7581ce7bc97d7df610378b9209db5fc9e46d544e5ccca85a17675b6a609c7dd71bf3a240e863e065f70412e4295b4fc82a013b16f3eefcfa3a4",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "Lax"
+      },
+      {
+        "name": "TS907680a2027",
+        "value": "08eef273b2ab20006e573c936d8eb740f8b1b6730d616e5ae15b1f3e23d4be630d9c3864371a901e08f89632d9113000d7f12eec801a11af1657cee138b848d3d94a8cd73042a1affb9fdeb85c23c4f9b7ab608bcda9a891381e47b4dc31b225",
+        "domain": "dip.cezdistribuce.cz",
+        "path": "/",
+        "expires": -1,
+        "httpOnly": false,
+        "secure": false,
+        "sameSite": "Lax"
+      }
+    ],
+    "document_cookie_raw": "TS01ed5b19=01110d47910de30ca3849107065c9ad3cf4c68934335c9c077873d66fdaf29fd0b4b872da85399e242bc6b02f865e6d27e442b6b00fa1708f0bde5edd97d46607bd8bd3d7e9edd55a7e55f716394427c2376cbbf03d44962cb1453d94080145a44ba5fe36fd5588bebd1132a175ed4b306f081d02a49a6ac0c25feea6bfdbfc6144fc9042d"
+  },
+  "browser_storage": {
+    "localStorage": {},
+    "sessionStorage": {},
+    "potential_tokens": [
+      "cookie.DISSESSION=7178f805-075b-4cc1-a2d0-bf000d7d24e3...",
+      "cookie.TS0177a524=01604099e5af1a113a812e387f658c4bd7ab7af3ba4cdb76ef...",
+      "cookie.TS01d523a0=01604099e55407173ca7b4d7b711911e20f15053e0b0418098...",
+      "cookie.pac4jCsrfToken=ae89445b-e1f0-4c9d-bf85-2e824414df19...",
+      "cookie.TS0139e499=01604099e59c2f25c6287cd12cdf4f630cfb5d036e4cdb76ef...",
+      "cookie.TS01493c2a=01604099e59d9595c1db944bedc427fe96ba2e91e74cdb76ef...",
+      "cookie.TS0139e499030=01ac25f900f714bb6d17776c86a15f9a0cb4664923e55f3d2c...",
+      "cookie.JSESSIONID=EumLFtvAauJeBwF6vIi4pJ6ZwD5onAFko_IH_SAPxdhvL9Mbf9...",
+      "cookie.JSESSIONMARKID=KKex0gT9rL3eKY-urnuXSRYYRgrSMg3w8k62Sj8gc...",
+      "cookie.TS0120452f=01604099e5a992d9607ecac3bfa33a17e6ac594bccb0418098...",
+      "cookie.TS907680a2027=08eef273b2ab20006e573c936d8eb740f8b1b6730d616e5ae1...",
+      "cookie.JSESSIONID=YWNlNDE1YjEtNTFkOC00NTM1LTlkNGMtMGUwYTAzZGFiMTI3...",
+      "cookie.BIGipServerpool_wls_cezpnd2=rd506o00000000000000000000ffffac1dce85o8225...",
+      "cookie.BIGipServerpool-portal_9020=!EWo+UTwvE6mZsIFzMJ7BsKRgYJqxKmXPoruaWfD4wSGCIaMtp...",
+      "cookie.TS01ed5b19=01110d47910de30ca3849107065c9ad3cf4c68934335c9c077..."
+    ]
+  },
+  "verdict": "COMPLETE",
+  "verdict_reason": "Dumped all browser storage state after login. Found 21 cookies, 0 localStorage items, 0 sessionStorage items, and 15 potential tokens.",
+  "error": null
+}

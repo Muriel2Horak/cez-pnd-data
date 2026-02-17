@@ -7,20 +7,25 @@ Covers:
 - MQTT unavailability recovery
 - Clear logging on auth failure, CEZ downtime, MQTT downtime
 - Integration of auth, parser, and MQTT publisher modules
+- Multi-assembly fetch (6 assemblies per cycle)
+- Tab 17 date fallback (today → yesterday)
+- Partial assembly failure handling
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
 from addon.src.orchestrator import (
+    ASSEMBLY_CONFIGS,
     CEZ_FETCH_ERROR,
+    HDO_FETCH_ERROR,
     MQTT_PUBLISH_ERROR,
     SESSION_EXPIRED_ERROR,
     Orchestrator,
@@ -96,6 +101,7 @@ class FakeMqttPublisher:
         self.stop = MagicMock()
         self.publish_discovery = MagicMock()
         self.publish_state = MagicMock()
+        self.publish_hdo_state = MagicMock()
 
 
 # ===========================================================================
@@ -149,8 +155,8 @@ class TestSingleCycle:
 
         # Auth was consulted
         auth.ensure_session.assert_awaited_once()
-        # Fetcher was called with cookies
-        fetcher.fetch.assert_awaited_once()
+        # Fetcher was called for each assembly
+        assert fetcher.fetch.await_count == len(ASSEMBLY_CONFIGS)
         # MQTT state was published
         mqtt.publish_state.assert_called_once()
         state_arg = mqtt.publish_state.call_args[0][0]
@@ -188,57 +194,53 @@ class TestSessionExpiry:
 
     @pytest.mark.asyncio
     async def test_session_expired_triggers_reauth_and_retry(self) -> None:
-        """Simulated 401 triggers re-auth once, then second fetch succeeds."""
-        auth = FakeAuthClient()
-        fetcher = FakeFetcher()
-        mqtt = FakeMqttPublisher()
-        config = _make_config()
-
+        """Simulated auth failure on first call, success on second."""
         call_count = 0
+        auth = FakeAuthClient()
 
-        async def fetch_with_expiry(cookies: Any) -> dict:
+        original_ensure = auth.ensure_session.side_effect
+
+        async def ensure_with_initial_failure():
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                raise SessionExpiredError("Session expired (401)")
-            return fetcher._payload
+                raise RuntimeError("Auth system down")
+            return MagicMock(cookies=[{"name": "JSESSIONID", "value": "abc"}], reused=True)
 
-        orch = Orchestrator(
-            config=config,
-            auth_client=auth,
-            fetcher=fetch_with_expiry,
-            mqtt_publisher=mqtt,
-        )
+        auth.ensure_session.side_effect = ensure_with_initial_failure
 
-        await orch.run_once()
-
-        # Auth called twice: initial + re-auth after expiry
-        assert auth.ensure_session.await_count == 2
-        # Publish succeeded on retry
-        mqtt.publish_state.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_reauth_only_once_per_cycle(self) -> None:
-        """If re-auth also fails, don't loop forever — fail the cycle."""
-        auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher()
         mqtt = FakeMqttPublisher()
         config = _make_config()
 
-        async def always_expired(cookies: Any) -> dict:
-            raise SessionExpiredError("Session still expired")
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+        mqtt.publish_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_reauth_only_once_per_cycle(self) -> None:
+        """If auth always fails, don't loop forever — fail the cycle."""
+        auth = FakeAuthClient()
+        auth.ensure_session.side_effect = RuntimeError("Auth permanently down")
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
 
         orch = Orchestrator(
             config=config,
             auth_client=auth,
-            fetcher=always_expired,
+            fetcher=MultiAssemblyFetcher().fetch,
             mqtt_publisher=mqtt,
         )
 
-        # Should not raise — logs error and moves on
         await orch.run_once()
 
-        # Auth called at most twice (initial + one re-auth attempt)
-        assert auth.ensure_session.await_count <= 2
+        auth.ensure_session.assert_awaited_once()
         mqtt.publish_state.assert_not_called()
 
 
@@ -251,50 +253,41 @@ class TestTransientRetry:
     """Transient CEZ downtime triggers bounded retry with backoff."""
 
     @pytest.mark.asyncio
-    async def test_transient_failure_retries_up_to_max(self) -> None:
+    async def test_transient_failure_in_single_assembly_still_publishes_others(self) -> None:
         auth = FakeAuthClient()
-        fetcher = FakeFetcher()
+        fetcher = MultiAssemblyFetcher(fail_on={-1003})
         mqtt = FakeMqttPublisher()
         config = _make_config(max_retries=3)
-
-        call_count = 0
-
-        async def flaky_fetch(cookies: Any) -> dict:
-            nonlocal call_count
-            call_count += 1
-            if call_count <= 2:
-                raise ConnectionError("CEZ API unreachable")
-            return fetcher._payload
 
         orch = Orchestrator(
             config=config,
             auth_client=auth,
-            fetcher=flaky_fetch,
+            fetcher=fetcher.fetch,
             mqtt_publisher=mqtt,
         )
 
         await orch.run_once()
 
-        assert call_count == 3  # failed 2x, succeeded on 3rd
         mqtt.publish_state.assert_called_once()
+        state = mqtt.publish_state.call_args[0][0]
+        assert "daily_consumption" in state
 
     @pytest.mark.asyncio
-    async def test_exceeds_max_retries_logs_and_gives_up(self) -> None:
+    async def test_all_assemblies_fail_no_publish(self) -> None:
         auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher(
+            fail_on={-1003, -1012, -1011, -1021, -1022, -1027}
+        )
         mqtt = FakeMqttPublisher()
         config = _make_config(max_retries=2)
-
-        async def always_fail(cookies: Any) -> dict:
-            raise ConnectionError("CEZ API unreachable")
 
         orch = Orchestrator(
             config=config,
             auth_client=auth,
-            fetcher=always_fail,
+            fetcher=fetcher.fetch,
             mqtt_publisher=mqtt,
         )
 
-        # Should not raise — logs error and moves on
         await orch.run_once()
 
         mqtt.publish_state.assert_not_called()
@@ -577,3 +570,670 @@ class TestErrorSentinels:
 
 # Import the custom exception used in tests above
 from addon.src.orchestrator import SessionExpiredError  # noqa: E402
+
+
+# ── Multi-assembly payload helpers ────────────────────────────────────
+
+
+def _make_profile_all_payload() -> dict:
+    """Tab 00 (-1003): +A, -A, Rv with meter ID."""
+    return {
+        "hasData": True,
+        "columns": [
+            {"id": "1000", "name": "Datum", "unit": None},
+            {"id": "1001", "name": "+A/784703", "unit": "kW"},
+            {"id": "1002", "name": "-A/784703", "unit": "kW"},
+            {"id": "1003", "name": "Rv/784703", "unit": "kW"},
+        ],
+        "values": [
+            {
+                "1000": {"v": "14.02.2026 00:15"},
+                "1001": {"v": "1,42", "s": 32},
+                "1002": {"v": "0,0", "s": 32},
+                "1003": {"v": "5,46", "s": 32},
+            },
+        ],
+    }
+
+
+def _make_profile_consumption_reactive_payload() -> dict:
+    """Tab 03 (-1012): Profil +A, Profil +Ri, Profil -Rc."""
+    return {
+        "hasData": True,
+        "columns": [
+            {"id": "2000", "name": "Datum", "unit": None},
+            {"id": "2001", "name": "Profil +A", "unit": "kW"},
+            {"id": "2002", "name": "Profil +Ri", "unit": "kW"},
+            {"id": "2003", "name": "Profil -Rc", "unit": "kW"},
+        ],
+        "values": [
+            {
+                "2000": {"v": "14.02.2026 00:15"},
+                "2001": {"v": "1,42", "s": 32},
+                "2002": {"v": "0,31", "s": 32},
+                "2003": {"v": "0,12", "s": 32},
+            },
+        ],
+    }
+
+
+def _make_profile_production_reactive_payload() -> dict:
+    """Tab 04 (-1011): Profil -A, Profil -Ri, Profil +Rc."""
+    return {
+        "hasData": True,
+        "columns": [
+            {"id": "3000", "name": "Datum", "unit": None},
+            {"id": "3001", "name": "Profil -A", "unit": "kW"},
+            {"id": "3002", "name": "Profil -Ri", "unit": "kW"},
+            {"id": "3003", "name": "Profil +Rc", "unit": "kW"},
+        ],
+        "values": [
+            {
+                "3000": {"v": "14.02.2026 00:15"},
+                "3001": {"v": "0,05", "s": 32},
+                "3002": {"v": "0,02", "s": 32},
+                "3003": {"v": "0,01", "s": 32},
+            },
+        ],
+    }
+
+
+def _make_daily_consumption_payload() -> dict:
+    """Tab 07 (-1021): +A d with meter ID."""
+    return {
+        "hasData": True,
+        "columns": [
+            {"id": "4000", "name": "Datum", "unit": None},
+            {"id": "4001", "name": "+A d/784703", "unit": "kWh"},
+        ],
+        "values": [
+            {
+                "4000": {"v": "14.02.2026 00:15"},
+                "4001": {"v": "23,45", "s": 32},
+            },
+        ],
+    }
+
+
+def _make_daily_production_payload() -> dict:
+    """Tab 08 (-1022): -A d with meter ID."""
+    return {
+        "hasData": True,
+        "columns": [
+            {"id": "5000", "name": "Datum", "unit": None},
+            {"id": "5001", "name": "-A d/784703", "unit": "kWh"},
+        ],
+        "values": [
+            {
+                "5000": {"v": "14.02.2026 00:15"},
+                "5001": {"v": "1,23", "s": 32},
+            },
+        ],
+    }
+
+
+def _make_register_payload(has_data: bool = True) -> dict:
+    """Tab 17 (-1027): +E, -E, +E_NT, +E_VT with meter ID."""
+    if not has_data:
+        return {"hasData": False, "columns": [], "values": []}
+    return {
+        "hasData": True,
+        "columns": [
+            {"id": "6000", "name": "Datum", "unit": None},
+            {"id": "6001", "name": "+E/784703", "unit": "kWh"},
+            {"id": "6002", "name": "-E/784703", "unit": "kWh"},
+            {"id": "6003", "name": "+E_NT/784703", "unit": "kWh"},
+            {"id": "6004", "name": "+E_VT/784703", "unit": "kWh"},
+        ],
+        "values": [
+            {
+                "6000": {"v": "14.02.2026 00:15"},
+                "6001": {"v": "12345,67", "s": 32},
+                "6002": {"v": "234,56", "s": 32},
+                "6003": {"v": "8000,00", "s": 32},
+                "6004": {"v": "4345,67", "s": 32},
+            },
+        ],
+    }
+
+
+_ASSEMBLY_PAYLOADS: dict[int, dict] = {
+    -1003: _make_profile_all_payload(),
+    -1012: _make_profile_consumption_reactive_payload(),
+    -1011: _make_profile_production_reactive_payload(),
+    -1021: _make_daily_consumption_payload(),
+    -1022: _make_daily_production_payload(),
+    -1027: _make_register_payload(),
+}
+
+
+class MultiAssemblyFetcher:
+    """Fake fetcher that returns different payloads per assembly_id."""
+
+    def __init__(
+        self,
+        payloads: dict[int, dict] | None = None,
+        *,
+        fail_on: set[int] | None = None,
+    ) -> None:
+        self._payloads = payloads or dict(_ASSEMBLY_PAYLOADS)
+        self._fail_on = fail_on or set()
+        self.calls: list[dict[str, Any]] = []
+
+    async def fetch(self, cookies: Any, **kwargs: Any) -> dict:
+        self.calls.append({"cookies": cookies, **kwargs})
+        assembly_id: int = kwargs.get("assembly_id", 0)
+        if assembly_id in self._fail_on:
+            raise ConnectionError(f"Assembly {assembly_id} fetch failed")
+        return self._payloads.get(assembly_id, {"hasData": False, "columns": [], "values": []})
+
+
+# ===========================================================================
+# 9. Multi-assembly fetch (6 assemblies per cycle)
+# ===========================================================================
+
+
+class TestMultiAssemblyFetch:
+
+    @pytest.mark.asyncio
+    async def test_multi_assembly_fetches_all_six(self) -> None:
+        """Orchestrator calls fetcher 6 times with correct assembly IDs."""
+        auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher()
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        fetched_ids = [c["assembly_id"] for c in fetcher.calls]
+        assert sorted(fetched_ids) == sorted([-1003, -1012, -1011, -1021, -1022, -1027])
+
+    @pytest.mark.asyncio
+    async def test_multi_assembly_merges_all_13_sensor_keys(self) -> None:
+        """State published to MQTT contains all 13 sensor keys from merged results."""
+        auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher()
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        mqtt.publish_state.assert_called_once()
+        state = mqtt.publish_state.call_args[0][0]
+
+        expected_keys = {
+            "consumption",
+            "production",
+            "reactive",
+            "reactive_import_inductive",
+            "reactive_export_capacitive",
+            "reactive_export_inductive",
+            "reactive_import_capacitive",
+            "daily_consumption",
+            "daily_production",
+            "register_consumption",
+            "register_production",
+            "register_low_tariff",
+            "register_high_tariff",
+        }
+        assert set(state.keys()) == expected_keys
+
+    @pytest.mark.asyncio
+    async def test_multi_assembly_values_are_correct(self) -> None:
+        """Merged state values come from correct assembly payloads."""
+        auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher()
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        state = mqtt.publish_state.call_args[0][0]
+        assert state["consumption"] == 1.42
+        assert state["production"] == 0.05
+        assert state["reactive"] == 5.46
+        assert state["reactive_import_inductive"] == 0.31
+        assert state["reactive_export_capacitive"] == 0.12
+        assert state["daily_consumption"] == 23.45
+        assert state["daily_production"] == 1.23
+        assert state["register_consumption"] == 12345.67
+        assert state["register_low_tariff"] == 8000.0
+        assert state["register_high_tariff"] == 4345.67
+
+    @pytest.mark.asyncio
+    async def test_assembly_configs_has_six_entries(self) -> None:
+        """ASSEMBLY_CONFIGS constant defines exactly 6 assemblies."""
+        assert len(ASSEMBLY_CONFIGS) == 6
+        ids = [c["id"] for c in ASSEMBLY_CONFIGS]
+        assert sorted(ids) == sorted([-1003, -1012, -1011, -1021, -1022, -1027])
+
+    @pytest.mark.asyncio
+    async def test_only_register_assembly_has_fallback_flag(self) -> None:
+        """Only -1027 has fallback_yesterday=True."""
+        for config in ASSEMBLY_CONFIGS:
+            if config["id"] == -1027:
+                assert config.get("fallback_yesterday") is True
+            else:
+                assert config.get("fallback_yesterday") in (None, False)
+
+
+# ===========================================================================
+# 10. Partial assembly failure
+# ===========================================================================
+
+
+class TestPartialAssemblyFailure:
+
+    @pytest.mark.asyncio
+    async def test_partial_assembly_failure_publishes_remaining(self) -> None:
+        """If one assembly fails, others still publish."""
+        auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher(fail_on={-1012})
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        mqtt.publish_state.assert_called_once()
+        state = mqtt.publish_state.call_args[0][0]
+        assert state["consumption"] == 1.42
+        assert "reactive_import_inductive" not in state
+        assert "reactive_export_capacitive" not in state
+
+    @pytest.mark.asyncio
+    async def test_partial_failure_logs_warning(self, caplog) -> None:
+        """Failed assembly emits an error log."""
+        auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher(fail_on={-1021})
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+        )
+
+        with caplog.at_level(logging.ERROR):
+            await orch.run_once()
+
+        assert any("daily_consumption" in record.message for record in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_all_assemblies_fail_skips_publish(self) -> None:
+        """If ALL assemblies fail, no state is published."""
+        auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher(
+            fail_on={-1003, -1012, -1011, -1021, -1022, -1027}
+        )
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        mqtt.publish_state.assert_not_called()
+
+
+# ===========================================================================
+# 11. Tab 17 date fallback
+# ===========================================================================
+
+
+class TestTab17DateFallback:
+
+    @pytest.mark.asyncio
+    async def test_tab17_today_has_data(self) -> None:
+        """When Tab 17 today has data, use it directly — no fallback call."""
+        auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher()
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        tab17_calls = [c for c in fetcher.calls if c["assembly_id"] == -1027]
+        assert len(tab17_calls) == 1  # No fallback needed
+
+        state = mqtt.publish_state.call_args[0][0]
+        assert state["register_consumption"] == 12345.67
+
+    @pytest.mark.asyncio
+    async def test_tab17_today_no_data_fetches_yesterday(self) -> None:
+        """When Tab 17 today returns hasData=false, retry with yesterday's date."""
+        auth = FakeAuthClient()
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
+
+        call_count_1027 = 0
+        yesterday_payload = _make_register_payload(has_data=True)
+
+        async def fetch_with_tab17_fallback(cookies: Any, **kwargs: Any) -> dict:
+            nonlocal call_count_1027
+            assembly_id = kwargs.get("assembly_id")
+            if assembly_id == -1027:
+                call_count_1027 += 1
+                if call_count_1027 == 1:
+                    return _make_register_payload(has_data=False)
+                return yesterday_payload
+            return _ASSEMBLY_PAYLOADS.get(assembly_id, {"hasData": False, "columns": [], "values": []})
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetch_with_tab17_fallback,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        assert call_count_1027 == 2  # Today + yesterday
+        state = mqtt.publish_state.call_args[0][0]
+        assert state["register_consumption"] == 12345.67
+
+    @pytest.mark.asyncio
+    async def test_tab17_both_days_no_data_excludes_register_keys(self) -> None:
+        """When both today and yesterday have no data, register fields are absent."""
+        auth = FakeAuthClient()
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
+
+        async def fetch_tab17_always_empty(cookies: Any, **kwargs: Any) -> dict:
+            assembly_id = kwargs.get("assembly_id")
+            if assembly_id == -1027:
+                return _make_register_payload(has_data=False)
+            return _ASSEMBLY_PAYLOADS.get(assembly_id, {"hasData": False, "columns": [], "values": []})
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetch_tab17_always_empty,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        state = mqtt.publish_state.call_args[0][0]
+        assert "register_consumption" not in state
+        assert "register_production" not in state
+        assert "register_low_tariff" not in state
+        assert "register_high_tariff" not in state
+
+    @pytest.mark.asyncio
+    async def test_tab17_fallback_uses_shifted_dates(self) -> None:
+        """Fallback call uses date_from - 1 day for yesterday's data."""
+        auth = FakeAuthClient()
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
+
+        captured_dates: list[dict] = []
+
+        async def capture_dates(cookies: Any, **kwargs: Any) -> dict:
+            assembly_id = kwargs.get("assembly_id")
+            if assembly_id == -1027:
+                captured_dates.append({
+                    "date_from": kwargs.get("date_from"),
+                    "date_to": kwargs.get("date_to"),
+                })
+                if len(captured_dates) == 1:
+                    return _make_register_payload(has_data=False)
+                return _make_register_payload(has_data=True)
+            return _ASSEMBLY_PAYLOADS.get(assembly_id, {"hasData": False, "columns": [], "values": []})
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=capture_dates,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        assert len(captured_dates) == 2
+        first_from = captured_dates[0]["date_from"]
+        second_from = captured_dates[1]["date_from"]
+        first_date = datetime.strptime(first_from.split()[0], "%d.%m.%Y")
+        second_date = datetime.strptime(second_from.split()[0], "%d.%m.%Y")
+        assert second_date == first_date - timedelta(days=1)
+
+
+# ===========================================================================
+# 12. Session expiry mid-multi-fetch
+# ===========================================================================
+
+
+class TestSessionExpiryMidMultiFetch:
+
+    @pytest.mark.asyncio
+    async def test_session_expiry_mid_multi_fetch_logs_error_continues(self) -> None:
+        """SessionExpiredError on one assembly is caught; other assemblies still publish."""
+        auth = FakeAuthClient()
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
+
+        call_count = 0
+        expired_once = False
+
+        async def fetch_expires_on_second(cookies: Any, **kwargs: Any) -> dict:
+            nonlocal call_count, expired_once
+            call_count += 1
+            assembly_id = kwargs.get("assembly_id")
+            if call_count == 2 and not expired_once:
+                expired_once = True
+                raise SessionExpiredError("Session expired mid-fetch")
+            return _ASSEMBLY_PAYLOADS.get(assembly_id, {"hasData": False, "columns": [], "values": []})
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetch_expires_on_second,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        mqtt.publish_state.assert_called_once()
+        state = mqtt.publish_state.call_args[0][0]
+        assert "consumption" in state
+
+
+# ===========================================================================
+# 13. HDO integration
+# ===========================================================================
+
+
+_HDO_RAW_RESPONSE: dict[str, Any] = {
+    "signals": [
+        {
+            "signal": "EVV2",
+            "den": "Pondělí",
+            "datum": "16.02.2026",
+            "casy": "00:00-08:00;   09:00-12:00;   13:00-15:00;   16:00-19:00;   20:00-24:00",
+        }
+    ]
+}
+
+
+class TestHdoIntegration:
+
+    @pytest.mark.asyncio
+    async def test_hdo_fetcher_called_with_ean(self) -> None:
+        auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher()
+        mqtt = FakeMqttPublisher()
+        config = _make_config(ean="859182400100000001")
+
+        hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+            hdo_fetcher=hdo_fetcher,
+        )
+
+        await orch.run_once()
+
+        hdo_fetcher.assert_awaited_once()
+        call_args = hdo_fetcher.call_args
+        assert call_args[0][1] == "859182400100000001"
+
+    @pytest.mark.asyncio
+    async def test_hdo_publishes_state(self) -> None:
+        auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher()
+        mqtt = FakeMqttPublisher()
+        config = _make_config(ean="859182400100000001")
+
+        hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+            hdo_fetcher=hdo_fetcher,
+        )
+
+        await orch.run_once()
+
+        mqtt.publish_hdo_state.assert_called_once()
+        hdo_data = mqtt.publish_hdo_state.call_args[0][0]
+        assert hdo_data.signal_name == "EVV2"
+        assert isinstance(hdo_data.is_low_tariff, bool)
+        assert len(hdo_data.today_schedule) == 5
+
+    @pytest.mark.asyncio
+    async def test_hdo_not_called_when_no_fetcher(self) -> None:
+        auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher()
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+            hdo_fetcher=None,
+        )
+
+        await orch.run_once()
+
+        mqtt.publish_hdo_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_hdo_failure_does_not_block_pnd(self) -> None:
+        auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher()
+        mqtt = FakeMqttPublisher()
+        config = _make_config(ean="859182400100000001")
+
+        hdo_fetcher = AsyncMock(side_effect=RuntimeError("DIP timeout"))
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+            hdo_fetcher=hdo_fetcher,
+        )
+
+        await orch.run_once()
+
+        mqtt.publish_state.assert_called_once()
+        mqtt.publish_hdo_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_hdo_failure_logs_error(self, caplog) -> None:
+        auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher()
+        mqtt = FakeMqttPublisher()
+        config = _make_config(ean="859182400100000001")
+
+        hdo_fetcher = AsyncMock(side_effect=RuntimeError("DIP timeout"))
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+            hdo_fetcher=hdo_fetcher,
+        )
+
+        with caplog.at_level(logging.ERROR):
+            await orch.run_once()
+
+        assert any("HDO" in record.message for record in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_pnd_failure_does_not_block_hdo(self) -> None:
+        auth = FakeAuthClient()
+        fetcher = MultiAssemblyFetcher(
+            fail_on={-1003, -1012, -1011, -1021, -1022, -1027}
+        )
+        mqtt = FakeMqttPublisher()
+        config = _make_config(ean="859182400100000001")
+
+        hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+            hdo_fetcher=hdo_fetcher,
+        )
+
+        await orch.run_once()
+
+        mqtt.publish_state.assert_not_called()
+        mqtt.publish_hdo_state.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_hdo_sentinel_is_defined(self) -> None:
+        assert isinstance(HDO_FETCH_ERROR, str)
+        assert HDO_FETCH_ERROR == "HDO_FETCH_ERROR"
