@@ -8,7 +8,7 @@ import logging
 import os
 import signal
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TypedDict, Union
 
 import paho.mqtt.client as mqtt_client
 
@@ -17,6 +17,20 @@ from .dip_client import DipClient
 from .mqtt_publisher import MqttPublisher
 from .orchestrator import Orchestrator, OrchestratorConfig
 from .session_manager import Credentials, CredentialsProvider, SessionStore
+
+
+class CezConfig(TypedDict):
+    email: str
+    password: str
+    electrometer_id: Optional[str]
+    ean: str
+
+
+class MqttConfig(TypedDict):
+    host: str
+    port: int
+    username: str
+    password: str
 
 import aiohttp
 
@@ -145,9 +159,9 @@ def read_env_var(name: str, required: bool = True) -> Optional[str]:
     return value
 
 
-def create_config() -> Dict[str, Any]:
+def create_config() -> Dict[str, Dict[str, Any]]:
     """Create configuration dictionary from environment variables."""
-    config = {
+    config: Dict[str, Dict[str, Any]] = {
         'cez': {
             'email': read_env_var('CEZ_EMAIL'),
             'password': read_env_var('CEZ_PASSWORD'),
