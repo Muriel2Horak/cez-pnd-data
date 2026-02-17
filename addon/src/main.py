@@ -34,8 +34,8 @@ class MqttConfig(TypedDict):
 
 import aiohttp
 
-from .pnd_client import PndClient
 from .dip_client import DipClient
+from .pnd_client import PndClient
 
 PND_DATA_URL = "https://pnd.cezdistribuce.cz/cezpnd2/external/data"
 
@@ -48,7 +48,8 @@ logger = logging.getLogger(__name__)
 
 
 def _get_async_playwright():  # type: ignore[no-untyped-def]
-    from playwright.async_api import async_playwright  # type: ignore[import-not-found]
+    from playwright.async_api import \
+        async_playwright  # type: ignore[import-not-found]
     return async_playwright
 
 

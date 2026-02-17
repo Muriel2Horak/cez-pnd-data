@@ -22,16 +22,10 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
-from addon.src.orchestrator import (
-    ASSEMBLY_CONFIGS,
-    CEZ_FETCH_ERROR,
-    HDO_FETCH_ERROR,
-    MQTT_PUBLISH_ERROR,
-    SESSION_EXPIRED_ERROR,
-    Orchestrator,
-    OrchestratorConfig,
-)
-
+from addon.src.orchestrator import (ASSEMBLY_CONFIGS, CEZ_FETCH_ERROR,
+                                    HDO_FETCH_ERROR, MQTT_PUBLISH_ERROR,
+                                    SESSION_EXPIRED_ERROR, Orchestrator,
+                                    OrchestratorConfig)
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -570,7 +564,6 @@ class TestErrorSentinels:
 
 # Import the custom exception used in tests above
 from addon.src.orchestrator import SessionExpiredError  # noqa: E402
-
 
 # ── Multi-assembly payload helpers ────────────────────────────────────
 

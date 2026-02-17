@@ -14,17 +14,12 @@ from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
-from addon.src.mqtt_publisher import (
-    AVAILABILITY_TOPIC_TEMPLATE,
-    CONFIG_TOPIC_TEMPLATE,
-    STATE_TOPIC_TEMPLATE,
-    VALID_SENSOR_KEYS,
-    MqttPublisher,
-    SensorDefinition,
-    build_discovery_payload,
-    get_sensor_definitions,
-)
-
+from addon.src.mqtt_publisher import (AVAILABILITY_TOPIC_TEMPLATE,
+                                      CONFIG_TOPIC_TEMPLATE,
+                                      STATE_TOPIC_TEMPLATE, VALID_SENSOR_KEYS,
+                                      MqttPublisher, SensorDefinition,
+                                      build_discovery_payload,
+                                      get_sensor_definitions)
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 

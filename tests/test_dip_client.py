@@ -9,11 +9,7 @@ from unittest.mock import AsyncMock, Mock
 import aiohttp
 import pytest
 
-from addon.src.dip_client import (
-    DipClient,
-    DipFetchError,
-    DipTokenError,
-)
+from addon.src.dip_client import DipClient, DipFetchError, DipTokenError
 
 SAMPLE_COOKIES = [
     {"name": "JSESSIONID", "value": "abc123"},

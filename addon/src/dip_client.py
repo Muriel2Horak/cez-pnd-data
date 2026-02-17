@@ -7,9 +7,8 @@ from typing import Any
 
 import aiohttp
 
-from .cookie_utils import playwright_cookies_to_header
 from .auth import DEFAULT_USER_AGENT
-
+from .cookie_utils import playwright_cookies_to_header
 
 DIP_PORTAL_URL = "https://dip.cezdistribuce.cz/irj/portal"
 TOKEN_PATH = "rest-auth-api?path=/token/get"

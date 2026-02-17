@@ -18,24 +18,18 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from addon.src.mqtt_publisher import (
-    AVAILABILITY_TOPIC_TEMPLATE,
-    CONFIG_TOPIC_TEMPLATE,
-    STATE_TOPIC_TEMPLATE,
-    MqttPublisher,
-    build_discovery_payload,
-    get_sensor_definitions,
-    get_hdo_sensor_definitions,
-)
-from addon.src.orchestrator import Orchestrator, OrchestratorConfig, ASSEMBLY_CONFIGS
-from addon.src.parser import CezDataParser, detect_electrometer_id
-from addon.src.session_manager import (
-    Credentials,
-    CredentialsProvider,
-    SessionStore,
-)
 from addon.src.auth import AuthSession, PlaywrightAuthClient
-
+from addon.src.mqtt_publisher import (AVAILABILITY_TOPIC_TEMPLATE,
+                                      CONFIG_TOPIC_TEMPLATE,
+                                      STATE_TOPIC_TEMPLATE, MqttPublisher,
+                                      build_discovery_payload,
+                                      get_hdo_sensor_definitions,
+                                      get_sensor_definitions)
+from addon.src.orchestrator import (ASSEMBLY_CONFIGS, Orchestrator,
+                                    OrchestratorConfig)
+from addon.src.parser import CezDataParser, detect_electrometer_id
+from addon.src.session_manager import (Credentials, CredentialsProvider,
+                                       SessionStore)
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 

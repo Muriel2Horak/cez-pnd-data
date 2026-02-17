@@ -5,18 +5,15 @@ Tests validation functions for PND and HDO data structure.
 
 from __future__ import annotations
 
-import pytest
-
-from pathlib import Path
-
 # Add scripts/ to path
 import sys
+from pathlib import Path
+
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
-from live_verify_rules import (
-    validate_pnd_data,
-    validate_hdo_data,
-)
+from live_verify_rules import validate_hdo_data, validate_pnd_data
 
 
 class TestPndValidation:

@@ -24,7 +24,6 @@ from addon.src.auth import DEFAULT_USER_AGENT
 from addon.src.pnd_client import PndClient
 from scripts import live_verify_rules as validation
 
-
 PND_DATA_URL = "https://pnd.cezdistribuce.cz/cezpnd2/external/data"
 DIP_PORTAL_URL = "https://dip.cezdistribuce.cz/irj/portal"
 DIP_TOKEN_PATH = "rest-auth-api?path=/token/get"

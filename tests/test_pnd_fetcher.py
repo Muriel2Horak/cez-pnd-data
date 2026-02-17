@@ -5,8 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from addon.src.main import PndFetcher, PND_DATA_URL, build_pnd_payload
-
+from addon.src.main import PND_DATA_URL, PndFetcher, build_pnd_payload
 
 SAMPLE_COOKIES: list[dict[str, Any]] = [
     {"name": "JSESSIONID", "value": "test-session", "domain": ".cezdistribuce.cz", "path": "/"},

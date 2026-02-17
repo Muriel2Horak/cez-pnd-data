@@ -6,7 +6,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from addon.src.auth import AuthSession, PlaywrightAuthClient
-from addon.src.session_manager import Credentials, CredentialsProvider, SessionState, SessionStore
+from addon.src.session_manager import (Credentials, CredentialsProvider,
+                                       SessionState, SessionStore)
 
 
 class DummyCredentialsProvider(CredentialsProvider):

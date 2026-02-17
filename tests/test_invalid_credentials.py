@@ -17,16 +17,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from addon.src.auth import AuthSession, PlaywrightAuthClient
-from addon.src.mqtt_publisher import (
-    MqttPublisher,
-    STATE_TOPIC_TEMPLATE,
-)
-from addon.src.session_manager import (
-    Credentials,
-    CredentialsProvider,
-    SessionStore,
-)
-
+from addon.src.mqtt_publisher import STATE_TOPIC_TEMPLATE, MqttPublisher
+from addon.src.session_manager import (Credentials, CredentialsProvider,
+                                       SessionStore)
 
 # ── Helpers ───────────────────────────────────────────────────────────
 

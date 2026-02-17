@@ -13,11 +13,11 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable
 
-from .parser import CezDataParser
 from .hdo_parser import parse_hdo_signals
+from .parser import CezDataParser
 
 logger = logging.getLogger(__name__)
 

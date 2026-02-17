@@ -4,8 +4,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
-from .session_manager import Credentials, CredentialsProvider, SessionState, SessionStore
-
+from .session_manager import (Credentials, CredentialsProvider, SessionState,
+                              SessionStore)
 
 PND_BASE_URL = "https://pnd.cezdistribuce.cz/cezpnd2"
 PORTAL_URL = "https://dip.cezdistribuce.cz/irj/portal?zpnd"
@@ -44,7 +44,8 @@ class PlaywrightAuthClient:
         return AuthSession(cookies=cookies, reused=False)
 
     async def _login_via_playwright(self, credentials: Credentials) -> list[dict[str, Any]]:
-        from playwright.async_api import async_playwright  # type: ignore[import-not-found]
+        from playwright.async_api import \
+            async_playwright  # type: ignore[import-not-found]
 
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=True)

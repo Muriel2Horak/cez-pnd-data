@@ -7,7 +7,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-
 DEFAULT_OPTIONS_PATH = Path("/data/options.json")
 DEFAULT_SESSION_PATH = Path("/data/session_state.json")
 DEFAULT_SESSION_TTL = timedelta(hours=6)
