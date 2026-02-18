@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import copy
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -24,7 +23,6 @@ import pytest
 # Module under test — will fail until implemented (RED phase)
 from addon.src.parser import (
     CezDataParser,
-    ParsedReading,
     detect_electrometer_id,
     parse_czech_decimal,
     parse_czech_timestamp,

@@ -6,7 +6,6 @@ import aiohttp
 import pytest
 
 from addon.src.auth import DEFAULT_USER_AGENT
-from addon.src.cookie_utils import playwright_cookies_to_header
 from addon.src.orchestrator import SessionExpiredError
 from addon.src.pnd_client import PndClient, PndFetchError
 
@@ -30,7 +29,7 @@ async def test_fetch_data_builds_correct_payload():
     # Set session.post to return the context manager
     session.post = Mock(return_value=mock_post_cm)
 
-    result = await client.fetch_data(
+    _ = await client.fetch_data(
         cookies,
         assembly_id=-1003,
         date_from="16.02.2026 00:00",

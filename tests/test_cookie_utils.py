@@ -1,4 +1,3 @@
-import pytest
 
 from addon.src.cookie_utils import playwright_cookies_to_header
 

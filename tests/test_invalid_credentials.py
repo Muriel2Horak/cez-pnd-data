@@ -9,7 +9,6 @@ Covers:
 from __future__ import annotations
 
 import json
-import logging
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -17,8 +16,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from addon.src.auth import AuthSession, PlaywrightAuthClient
-from addon.src.mqtt_publisher import STATE_TOPIC_TEMPLATE, MqttPublisher
+from addon.src.auth import PlaywrightAuthClient
+from addon.src.mqtt_publisher import MqttPublisher
 from addon.src.session_manager import Credentials, CredentialsProvider, SessionStore
 
 # ── Helpers ───────────────────────────────────────────────────────────

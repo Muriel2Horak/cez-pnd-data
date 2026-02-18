@@ -21,7 +21,6 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 
 from addon.src.auth import DEFAULT_USER_AGENT
-from addon.src.pnd_client import PndClient
 from scripts import live_verify_rules as validation
 
 PND_DATA_URL = "https://pnd.cezdistribuce.cz/cezpnd2/external/data"
@@ -72,7 +71,7 @@ async def async_main() -> int:
         print("Optional: CEZ_EAN (for HDO data)")
         return 1
 
-    print(f"Starting live verification...")
+    print("Starting live verification...")
     print(f"Electrometer ID: {electrometer_id}")
     if ean:
         print(f"EAN: {ean}")
@@ -177,7 +176,7 @@ async def async_main() -> int:
             try:
                 pnd_data = json.loads(raw_text)
             except json.JSONDecodeError:
-                print(f"✗ Response is not valid JSON")
+                print("✗ Response is not valid JSON")
                 print(f"  Response preview: {raw_text[:1000]}")
                 return 1
 

@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -195,7 +195,7 @@ class TestSessionExpiry:
         call_count = 0
         auth = FakeAuthClient()
 
-        original_ensure = auth.ensure_session.side_effect
+        _ = auth.ensure_session.side_effect
 
         async def ensure_with_initial_failure():
             nonlocal call_count

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -21,7 +21,6 @@ from addon.src.mqtt_publisher import (
     STATE_TOPIC_TEMPLATE,
     VALID_SENSOR_KEYS,
     MqttPublisher,
-    SensorDefinition,
     build_discovery_payload,
     get_sensor_definitions,
 )

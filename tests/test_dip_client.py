@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import aiohttp
@@ -51,7 +50,7 @@ async def test_fetch_hdo_gets_token_first():
     session.get = Mock(side_effect=get_side_effect)
 
     client = DipClient(session=session)
-    result = await client.fetch_hdo(SAMPLE_COOKIES, ean="1234567890123")
+    _ = await client.fetch_hdo(SAMPLE_COOKIES, ean="1234567890123")
 
     # Verify token was fetched first
     token_calls = [c for c in session.get.call_args_list if "token/get" in str(c)]
@@ -96,7 +95,7 @@ async def test_fetch_hdo_uses_token_in_signals_request():
     session.get = Mock(side_effect=get_side_effect)
 
     client = DipClient(session=session)
-    result = await client.fetch_hdo(SAMPLE_COOKIES, ean="1234567890123")
+    _ = await client.fetch_hdo(SAMPLE_COOKIES, ean="1234567890123")
 
 
 @pytest.mark.asyncio
@@ -127,7 +126,7 @@ async def test_fetch_hdo_sends_correct_signals_url():
     )
 
     client = DipClient(session=session)
-    result = await client.fetch_hdo(SAMPLE_COOKIES, ean="1234567890123")
+    _ = await client.fetch_hdo(SAMPLE_COOKIES, ean="1234567890123")
 
     # Verify signals URL contains EAN
     signals_call = [c for c in session.get.call_args_list if "signals/" in str(c)][0]
@@ -162,9 +161,8 @@ async def test_fetch_hdo_converts_playwright_cookies():
             assert token_kwargs["headers"]["Cookie"] == "JSESSIONID=abc123"
         raise aiohttp.ClientError("Stop after first request")
 
-    import types
 
-    original_fetch = client.fetch_hdo
+    _ = client.fetch_hdo
     client.fetch_hdo = lambda *a, **kw: fetch_hdo_with_error(*a, **kw)
 
     try:
