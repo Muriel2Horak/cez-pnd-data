@@ -11,8 +11,8 @@ import signal
 import sys
 from typing import Any, Dict, Optional
 
-import paho.mqtt.client as mqtt_client
 import aiohttp
+import paho.mqtt.client as mqtt_client
 
 from .auth import PlaywrightAuthClient
 from .dip_client import DipClient
