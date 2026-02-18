@@ -161,7 +161,6 @@ async def test_fetch_hdo_converts_playwright_cookies():
             assert token_kwargs["headers"]["Cookie"] == "JSESSIONID=abc123"
         raise aiohttp.ClientError("Stop after first request")
 
-
     _ = client.fetch_hdo
     client.fetch_hdo = lambda *a, **kw: fetch_hdo_with_error(*a, **kw)
 
