@@ -5,10 +5,10 @@ Covers:
 - Auth exception does not publish any MQTT state
 - Missing credentials raise ValueError
 """
+
 from __future__ import annotations
 
 import json
-import logging
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -16,17 +16,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from addon.src.auth import AuthSession, PlaywrightAuthClient
-from addon.src.mqtt_publisher import (
-    MqttPublisher,
-    STATE_TOPIC_TEMPLATE,
-)
-from addon.src.session_manager import (
-    Credentials,
-    CredentialsProvider,
-    SessionStore,
-)
-
+from addon.src.auth import PlaywrightAuthClient
+from addon.src.mqtt_publisher import MqttPublisher
+from addon.src.session_manager import Credentials, CredentialsProvider, SessionStore
 
 # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -41,6 +33,7 @@ class DummyCredentialsProvider(CredentialsProvider):
 
 class AuthError(Exception):
     """Simulated authentication failure."""
+
     pass
 
 
@@ -51,9 +44,7 @@ class TestInvalidCredentials:
     """When auth fails, no stale state must be published."""
 
     @pytest.mark.asyncio
-    async def test_auth_failure_raises_no_stale_publish(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_auth_failure_raises_no_stale_publish(self, tmp_path: Path) -> None:
         """Invalid credentials → auth error → no MQTT state published."""
         session_path = tmp_path / "session.json"
         store = SessionStore(path=session_path, ttl=timedelta(hours=6))
@@ -69,12 +60,12 @@ class TestInvalidCredentials:
             await client.ensure_session()
 
         # No session file created
-        assert not session_path.exists(), "Session file must NOT be created on auth failure"
+        assert (
+            not session_path.exists()
+        ), "Session file must NOT be created on auth failure"
 
     @pytest.mark.asyncio
-    async def test_no_mqtt_state_on_auth_failure(
-        self, tmp_path: Path
-    ) -> None:
+    async def test_no_mqtt_state_on_auth_failure(self, tmp_path: Path) -> None:
         """Full pipeline: auth fails → MQTT publisher never receives state values."""
         session_path = tmp_path / "session.json"
         store = SessionStore(path=session_path, ttl=timedelta(hours=6))
@@ -104,12 +95,11 @@ class TestInvalidCredentials:
 
         # Assert no state topics were published
         state_calls = [
-            c for c in mock_mqtt.publish.call_args_list
-            if "/state" in c[0][0]
+            c for c in mock_mqtt.publish.call_args_list if "/state" in c[0][0]
         ]
-        assert len(state_calls) == 0, (
-            f"No state should be published on auth failure, but got: {state_calls}"
-        )
+        assert (
+            len(state_calls) == 0
+        ), f"No state should be published on auth failure, but got: {state_calls}"
 
     @pytest.mark.asyncio
     async def test_auth_error_logged_clearly(
@@ -130,7 +120,10 @@ class TestInvalidCredentials:
 
         # Error message contains useful context
         error_msg = str(exc_info.value)
-        assert "invalid credentials" in error_msg.lower() or "login failed" in error_msg.lower()
+        assert (
+            "invalid credentials" in error_msg.lower()
+            or "login failed" in error_msg.lower()
+        )
         assert "bad@example.com" in error_msg
 
 
@@ -195,11 +188,13 @@ class TestStaleSessionProtection:
 
         past = datetime.now(tz=timezone.utc) - timedelta(hours=2)
         session_path.write_text(
-            json.dumps({
-                "cookies": [{"name": "OLD", "value": "stale", "expires": 0}],
-                "created_at": past.isoformat(),
-                "expires_at": (past + timedelta(seconds=1)).isoformat(),
-            })
+            json.dumps(
+                {
+                    "cookies": [{"name": "OLD", "value": "stale", "expires": 0}],
+                    "created_at": past.isoformat(),
+                    "expires_at": (past + timedelta(seconds=1)).isoformat(),
+                }
+            )
         )
 
         creds = DummyCredentialsProvider()
@@ -224,7 +219,8 @@ class TestStaleSessionProtection:
 
         # No state published
         state_calls = [
-            c for c in mock_mqtt.publish.call_args_list
-            if "/state" in c[0][0]
+            c for c in mock_mqtt.publish.call_args_list if "/state" in c[0][0]
         ]
-        assert len(state_calls) == 0, "Stale state must NOT be published after failed re-auth"
+        assert (
+            len(state_calls) == 0
+        ), "Stale state must NOT be published after failed re-auth"

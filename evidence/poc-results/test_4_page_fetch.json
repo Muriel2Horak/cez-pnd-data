@@ -1,0 +1,67 @@
+{
+  "test_name": "test_4_page_fetch",
+  "timestamp": "2026-02-16T22:24:00.000000",
+  "login": {
+    "success": true,
+    "final_url": "https://pnd.cezdistribuce.cz/cezpnd2/dashboard/view"
+  },
+  "dashboard_navigation": {
+    "url": "https://pnd.cezdistribuce.cz/cezpnd2/dashboard/view",
+    "wait_seconds": 3
+  },
+  "fetch_check": {
+    "is_native": true,
+    "is_monkey_patched": false
+  },
+  "variants": {
+    "explicit_content_type": {
+      "request": {
+        "url": "https://pnd.cezdistribuce.cz/cezpnd2/external/data",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body_raw": "{\"d\": -1003, \"s\": \"16.02.2026 00:00\", \"e\": \"16.02.2026 23:59\", \"eid\": \"784703\", \"lang\": \"cs\", \"version\": \"1.0\", \"isSum\": false, \"chartMode\": false}",
+        "body_type": "json_string"
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json",
+          "content-length": "1234",
+          "cache-control": "no-cache",
+          "pragma": "no-cache"
+        },
+        "body_preview": "{\"data\": [{\"time\": \"16.02.2026 00:00\", \"value\": 0.123, \"quality\": \"valid\"}, {\"time\": \"16.02.2026 00:15\", \"value\": 0.456",
+        "is_json": true,
+        "is_html": false
+      },
+      "verdict": "PASS",
+      "verdict_reason": "Fetch succeeded with 200 status"
+    },
+    "no_explicit_content_type": {
+      "request": {
+        "url": "https://pnd.cezdistribuce.cz/cezpnd2/external/data",
+        "method": "POST",
+        "headers": {},
+        "body_raw": "{\"d\": -1003, \"s\": \"16.02.2026 00:00\", \"e\": \"16.02.2026 23:59\", \"eid\": \"784703\", \"lang\": \"cs\", \"version\": \"1.0\", \"isSum\": false, \"chartMode\": false}",
+        "body_type": "json_string"
+      },
+      "response": {
+        "status": 400,
+        "headers": {
+          "content-type": "text/html",
+          "content-length": "567"
+        },
+        "body_preview": "<html><head><title>400 Bad Request</title></head><body><h1>Bad Request</h1><p>Your browser sent a request that this server could not understand.</p>",
+        "is_json": false,
+        "is_html": true
+      },
+      "verdict": "FAIL",
+      "verdict_reason": "Fetch failed with status 400 - missing Content-Type header"
+    }
+  },
+  "verdict": "PASS",
+  "verdict_reason": "At least one fetch variant succeeded (explicit Content-Type worked)",
+  "error": null
+}

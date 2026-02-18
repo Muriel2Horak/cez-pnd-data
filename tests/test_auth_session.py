@@ -6,11 +6,18 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from addon.src.auth import AuthSession, PlaywrightAuthClient
-from addon.src.session_manager import Credentials, CredentialsProvider, SessionState, SessionStore
+from addon.src.session_manager import (
+    Credentials,
+    CredentialsProvider,
+    SessionState,
+    SessionStore,
+)
 
 
 class DummyCredentialsProvider(CredentialsProvider):
-    def __init__(self, email: str = "user@example.com", password: str = "secret") -> None:
+    def __init__(
+        self, email: str = "user@example.com", password: str = "secret"
+    ) -> None:
         self._credentials = Credentials(email=email, password=password)
 
     def get_credentials(self) -> Credentials:
@@ -65,7 +72,9 @@ async def test_restore_session_avoids_login(tmp_path) -> None:
     async def login_runner(_: Credentials):
         raise AssertionError("login should not be called")
 
-    client = PlaywrightAuthClient(DummyCredentialsProvider(), store, login_runner=login_runner)
+    client = PlaywrightAuthClient(
+        DummyCredentialsProvider(), store, login_runner=login_runner
+    )
     session = await client.ensure_session()
 
     assert session.reused is True
@@ -94,7 +103,9 @@ async def test_expired_session_triggers_login(tmp_path) -> None:
         called["count"] += 1
         return [{"name": "DISSESSION", "value": "new", "expires": 0}]
 
-    client = PlaywrightAuthClient(DummyCredentialsProvider(), store, login_runner=login_runner)
+    client = PlaywrightAuthClient(
+        DummyCredentialsProvider(), store, login_runner=login_runner
+    )
     session = await client.ensure_session()
 
     assert called["count"] == 1

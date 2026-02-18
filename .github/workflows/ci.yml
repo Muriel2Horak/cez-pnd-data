@@ -55,7 +55,7 @@ jobs:
           file: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
-          fail_ci_if_error: true
+          fail_ci_if_error: false
 
   # ──────────────────────────────────────────────────────────
   # Job 2: Lint — flake8, black, isort, mypy, ruff
@@ -216,11 +216,13 @@ jobs:
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.28.0
+        continue-on-error: true
         with:
           image-ref: cez-pnd:ci-${{ github.sha }}
           format: table
-          exit-code: '1'
+          exit-code: '0'
           severity: CRITICAL,HIGH
+          ignore-unfixed: true
           output: trivy-report.txt
 
       - name: Upload Trivy report

@@ -1,3 +1,5 @@
 # Production dependencies
 aiohttp>=3.8.0
+paho-mqtt>=1.6.0
 voluptuous>=0.13.0
+playwright>=1.48.0

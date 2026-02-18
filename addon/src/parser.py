@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
 
-
 # ---------------------------------------------------------------------------
 # Data types
 # ---------------------------------------------------------------------------
@@ -24,25 +23,40 @@ from typing import Optional
 
 @dataclass(frozen=True)
 class ParsedReading:
-    """A single parsed 15-minute interval reading."""
+    """A single parsed interval reading supporting all CEZ PND tab types."""
 
     timestamp: datetime
-    consumption_kw: Optional[float]  # +A (active import)
-    production_kw: Optional[float]  # -A (active export)
-    reactive_kw: Optional[float]  # Rv (reactive)
+    # Tab 00: quarter-hour profiles
+    consumption_kw: Optional[float] = None  # +A (active import)
+    production_kw: Optional[float] = None  # -A (active export)
+    reactive_kw: Optional[float] = None  # Rv (reactive)
+    # Tab 03/04: reactive quadrant profiles
+    reactive_import_inductive_kw: Optional[float] = None  # +Ri
+    reactive_export_capacitive_kw: Optional[float] = None  # -Rc
+    reactive_export_inductive_kw: Optional[float] = None  # -Ri
+    reactive_import_capacitive_kw: Optional[float] = None  # +Rc
+    # Tab 07/08: daily aggregates
+    daily_consumption_kwh: Optional[float] = None  # +A d
+    daily_production_kwh: Optional[float] = None  # -A d
+    # Tab 17: register readings
+    register_consumption_kwh: Optional[float] = None  # +E
+    register_production_kwh: Optional[float] = None  # -E
+    register_low_tariff_kwh: Optional[float] = None  # +E_NT
+    register_high_tariff_kwh: Optional[float] = None  # +E_VT
 
 
 # ---------------------------------------------------------------------------
 # Utility functions
 # ---------------------------------------------------------------------------
 
-# Pattern to extract meter ID from column name like "+A/784703", "-A/784703", "Rv/784703"
-_METER_ID_PATTERN = re.compile(r"^(?:\+A|-A|Rv)/(\d+)$")
+# Extracts meter ID from column names:
+# "+A/784703", "-A/784703", "Rv/784703" (Tab 00)
+# "+A d/784703", "-A d/784703" (Tab 07/08)
+# "+E/784703", "-E/784703", "+E_NT/784703", "+E_VT/784703" (Tab 17)
+_METER_ID_PATTERN = re.compile(r"^(?:\+A|-A|Rv|\+A d|-A d|\+E|-E|\+E_NT|\+E_VT)/(\d+)$")
 
 # Czech timestamp: DD.MM.YYYY HH:MM
-_TIMESTAMP_PATTERN = re.compile(
-    r"^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})$"
-)
+_TIMESTAMP_PATTERN = re.compile(r"^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})$")
 
 
 def parse_czech_decimal(value: Optional[str]) -> Optional[float]:
@@ -119,11 +133,24 @@ class CezDataParser:
         self._columns = payload.get("columns", [])
         self._values = payload.get("values", [])
 
-        # Discover column IDs
         self.timestamp_col_id: Optional[str] = None
-        self.consumption_col_id: Optional[str] = None  # +A
-        self.production_col_id: Optional[str] = None  # -A
-        self.reactive_col_id: Optional[str] = None  # Rv
+        # Tab 00
+        self.consumption_col_id: Optional[str] = None
+        self.production_col_id: Optional[str] = None
+        self.reactive_col_id: Optional[str] = None
+        # Tab 03/04
+        self.reactive_import_inductive_col_id: Optional[str] = None
+        self.reactive_export_capacitive_col_id: Optional[str] = None
+        self.reactive_export_inductive_col_id: Optional[str] = None
+        self.reactive_import_capacitive_col_id: Optional[str] = None
+        # Tab 07/08
+        self.daily_consumption_col_id: Optional[str] = None
+        self.daily_production_col_id: Optional[str] = None
+        # Tab 17
+        self.register_consumption_col_id: Optional[str] = None
+        self.register_production_col_id: Optional[str] = None
+        self.register_low_tariff_col_id: Optional[str] = None
+        self.register_high_tariff_col_id: Optional[str] = None
 
         self._electrometer_id: Optional[str] = None
 
@@ -137,14 +164,40 @@ class CezDataParser:
 
             if name == "Datum":
                 self.timestamp_col_id = col_id
-            elif name.startswith("+A/"):
+            elif name.startswith("+A/") or name == "Profil +A":
                 self.consumption_col_id = col_id
                 self._extract_meter_id(name)
-            elif name.startswith("-A/"):
+            elif name.startswith("-A/") or name == "Profil -A":
                 self.production_col_id = col_id
                 self._extract_meter_id(name)
             elif name.startswith("Rv/"):
                 self.reactive_col_id = col_id
+                self._extract_meter_id(name)
+            elif name == "Profil +Ri":
+                self.reactive_import_inductive_col_id = col_id
+            elif name == "Profil -Rc":
+                self.reactive_export_capacitive_col_id = col_id
+            elif name == "Profil -Ri":
+                self.reactive_export_inductive_col_id = col_id
+            elif name == "Profil +Rc":
+                self.reactive_import_capacitive_col_id = col_id
+            elif name.startswith("+A d/"):
+                self.daily_consumption_col_id = col_id
+                self._extract_meter_id(name)
+            elif name.startswith("-A d/"):
+                self.daily_production_col_id = col_id
+                self._extract_meter_id(name)
+            elif name.startswith("+E_NT/"):
+                self.register_low_tariff_col_id = col_id
+                self._extract_meter_id(name)
+            elif name.startswith("+E_VT/"):
+                self.register_high_tariff_col_id = col_id
+                self._extract_meter_id(name)
+            elif name.startswith("+E/"):
+                self.register_consumption_col_id = col_id
+                self._extract_meter_id(name)
+            elif name.startswith("-E/"):
+                self.register_production_col_id = col_id
                 self._extract_meter_id(name)
 
     def _extract_meter_id(self, name: str) -> None:
@@ -159,9 +212,7 @@ class CezDataParser:
         """The detected electrometer ID, or None."""
         return self._electrometer_id
 
-    def _extract_cell_value(
-        self, row: dict, col_id: Optional[str]
-    ) -> Optional[str]:
+    def _extract_cell_value(self, row: dict, col_id: Optional[str]) -> Optional[str]:
         """Get the 'v' string from a cell, or None if missing."""
         if col_id is None:
             return None
@@ -177,25 +228,58 @@ class CezDataParser:
             ts_str = self._extract_cell_value(row, self.timestamp_col_id)
             ts = parse_czech_timestamp(ts_str)
             if ts is None:
-                # Skip rows without a valid timestamp
                 continue
-
-            consumption = parse_czech_decimal(
-                self._extract_cell_value(row, self.consumption_col_id)
-            )
-            production = parse_czech_decimal(
-                self._extract_cell_value(row, self.production_col_id)
-            )
-            reactive = parse_czech_decimal(
-                self._extract_cell_value(row, self.reactive_col_id)
-            )
 
             records.append(
                 ParsedReading(
                     timestamp=ts,
-                    consumption_kw=consumption,
-                    production_kw=production,
-                    reactive_kw=reactive,
+                    consumption_kw=parse_czech_decimal(
+                        self._extract_cell_value(row, self.consumption_col_id)
+                    ),
+                    production_kw=parse_czech_decimal(
+                        self._extract_cell_value(row, self.production_col_id)
+                    ),
+                    reactive_kw=parse_czech_decimal(
+                        self._extract_cell_value(row, self.reactive_col_id)
+                    ),
+                    reactive_import_inductive_kw=parse_czech_decimal(
+                        self._extract_cell_value(
+                            row, self.reactive_import_inductive_col_id
+                        )
+                    ),
+                    reactive_export_capacitive_kw=parse_czech_decimal(
+                        self._extract_cell_value(
+                            row, self.reactive_export_capacitive_col_id
+                        )
+                    ),
+                    reactive_export_inductive_kw=parse_czech_decimal(
+                        self._extract_cell_value(
+                            row, self.reactive_export_inductive_col_id
+                        )
+                    ),
+                    reactive_import_capacitive_kw=parse_czech_decimal(
+                        self._extract_cell_value(
+                            row, self.reactive_import_capacitive_col_id
+                        )
+                    ),
+                    daily_consumption_kwh=parse_czech_decimal(
+                        self._extract_cell_value(row, self.daily_consumption_col_id)
+                    ),
+                    daily_production_kwh=parse_czech_decimal(
+                        self._extract_cell_value(row, self.daily_production_col_id)
+                    ),
+                    register_consumption_kwh=parse_czech_decimal(
+                        self._extract_cell_value(row, self.register_consumption_col_id)
+                    ),
+                    register_production_kwh=parse_czech_decimal(
+                        self._extract_cell_value(row, self.register_production_col_id)
+                    ),
+                    register_low_tariff_kwh=parse_czech_decimal(
+                        self._extract_cell_value(row, self.register_low_tariff_col_id)
+                    ),
+                    register_high_tariff_kwh=parse_czech_decimal(
+                        self._extract_cell_value(row, self.register_high_tariff_col_id)
+                    ),
                 )
             )
         return records
@@ -220,5 +304,15 @@ class CezDataParser:
             "consumption_kw": latest.consumption_kw,
             "production_kw": latest.production_kw,
             "reactive_kw": latest.reactive_kw,
+            "reactive_import_inductive_kw": latest.reactive_import_inductive_kw,
+            "reactive_export_capacitive_kw": latest.reactive_export_capacitive_kw,
+            "reactive_export_inductive_kw": latest.reactive_export_inductive_kw,
+            "reactive_import_capacitive_kw": latest.reactive_import_capacitive_kw,
+            "daily_consumption_kwh": latest.daily_consumption_kwh,
+            "daily_production_kwh": latest.daily_production_kwh,
+            "register_consumption_kwh": latest.register_consumption_kwh,
+            "register_production_kwh": latest.register_production_kwh,
+            "register_low_tariff_kwh": latest.register_low_tariff_kwh,
+            "register_high_tariff_kwh": latest.register_high_tariff_kwh,
             "electrometer_id": self._electrometer_id,
         }
