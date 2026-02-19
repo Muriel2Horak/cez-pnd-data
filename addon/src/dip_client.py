@@ -23,6 +23,10 @@ class DipFetchError(Exception):
     """Raised when HDO signals fetch fails."""
 
 
+class DipMaintenanceError(DipFetchError):
+    """Raised when DIP endpoint is temporarily unavailable (maintenance)."""
+
+
 class DipClient:
     """DIP API client for HDO tariff data."""
 
@@ -49,6 +53,10 @@ class DipClient:
                 headers=headers,
                 timeout=timeout,
             ) as token_resp:
+                if token_resp.status in {400, 503}:
+                    raise DipMaintenanceError(
+                        f"Token endpoint unavailable (HTTP {token_resp.status})"
+                    )
                 if token_resp.status != 200:
                     raise DipTokenError(
                         f"Token request failed: HTTP {token_resp.status}"
@@ -65,6 +73,10 @@ class DipClient:
                 headers=signal_headers,
                 timeout=timeout,
             ) as signals_resp:
+                if signals_resp.status in {400, 503}:
+                    raise DipMaintenanceError(
+                        f"Signals endpoint unavailable (HTTP {signals_resp.status})"
+                    )
                 if signals_resp.status != 200:
                     raise DipFetchError(
                         f"Signals request failed: HTTP {signals_resp.status}"
