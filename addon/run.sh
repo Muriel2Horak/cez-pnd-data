@@ -25,7 +25,11 @@ try:
         print(json.dumps(value, separators=(",", ":")))
     else:
         print(str(value))
-except Exception:
+except json.JSONDecodeError as e:
+    sys.stderr.write(f"Warning: Failed to parse JSON in options file '{path}': {e}\n")
+    print(default)
+except Exception as e:
+    sys.stderr.write(f"Warning: Error reading options file '{path}': {e}\n")
     print(default)
 PY
     else
@@ -44,10 +48,51 @@ export MQTT_PORT="${MQTT_PORT:-1883}"
 export MQTT_USER="${MQTT_USER:-}"
 export MQTT_PASSWORD="${MQTT_PASSWORD:-}"
 
+if [[ -z "${CEZ_EMAIL}" || -z "${CEZ_PASSWORD}" ]]; then
+    echo "Error: Missing required add-on options 'email' or 'password'." >&2
+    echo "Please fill them in Home Assistant add-on configuration." >&2
+    exit 1
+fi
+
+wait_for_mqtt() {
+    local max_attempts=30
+    local attempt=1
+    local sleep_seconds=2
+
+    echo "Waiting for MQTT broker at ${MQTT_HOST}:${MQTT_PORT}..."
+    while (( attempt <= max_attempts )); do
+        if python3 - "$MQTT_HOST" "$MQTT_PORT" <<'PY'
+import socket
+import sys
+
+host = sys.argv[1]
+port = int(sys.argv[2])
+
+try:
+    with socket.create_connection((host, port), timeout=2):
+        pass
+except OSError:
+    raise SystemExit(1)
+
+raise SystemExit(0)
+PY
+        then
+            echo "MQTT broker is available."
+            return 0
+        fi
+        echo "MQTT not available yet (attempt ${attempt}/${max_attempts}), retrying in ${sleep_seconds}s..."
+        attempt=$((attempt + 1))
+        sleep "${sleep_seconds}"
+    done
+
+    echo "Error: MQTT broker at ${MQTT_HOST}:${MQTT_PORT} did not become available in time." >&2
+    return 1
+}
+
 echo "Starting CEZ PND add-on..."
-echo "Email: ${CEZ_EMAIL}"
-echo "Electrometer ID: ${CEZ_ELECTROMETER_ID}"
-echo "MQTT Host: ${MQTT_HOST}:${MQTT_PORT}"
+echo "Configuration loaded. Sensitive details are not printed to logs."
+
+wait_for_mqtt
 
 echo "Starting main application..."
 exec python3 /app/src/main.py
