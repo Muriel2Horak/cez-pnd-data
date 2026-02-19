@@ -131,11 +131,13 @@ class Orchestrator:
 
         try:
             session = await self._auth.ensure_session()
-        except Exception:
+        except Exception as e:
             logger.error(
-                "[%s] Auth failure — cannot obtain session, skipping cycle",
+                "[%s] Auth failure — cannot obtain session: %s — skipping cycle",
                 SESSION_EXPIRED_ERROR,
+                e,
             )
+            logger.debug("Auth failure details:", exc_info=True)
             return
 
         cookies = session.cookies

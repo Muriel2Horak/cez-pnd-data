@@ -1,11 +1,11 @@
 # Changelog
 
+## 0.1.5
+
+- Add detailed logging for Playwright authentication to diagnose login failures.
+- Log exception details when auth fails instead of generic error message.
+
 ## 0.1.4
-
-- **CRITICAL FIX**: Orchestrator now actually runs! Previously was created but never started.
-- Fix immediate shutdown after startup by calling `orchestrator.run_loop()`.
-
-## 0.1.3
 
 - Fix Python module import error by running as `python3 -m src.main` instead of direct file execution.
 - Add local testing script (`scripts/test-local.sh`) for pre-deploy verification.
