@@ -118,9 +118,7 @@ class MQTTClientWrapper:
 
     def __init__(self, host: str, port: int, username: str, password: str):
         callback_api_version = getattr(mqtt_client, "CallbackAPIVersion").VERSION2
-        self._client = mqtt_client.Client(
-            callback_api_version=callback_api_version
-        )
+        self._client = mqtt_client.Client(callback_api_version=callback_api_version)
         self._client.username_pw_set(username, password)
         self._host = host
         self._port = port
