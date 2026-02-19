@@ -102,4 +102,5 @@ echo "MQTT configuration is read from Supervisor-provided environment (mqtt:need
 wait_for_mqtt
 
 echo "Starting main application..."
-exec python3 /app/src/main.py
+cd /app
+exec python3 -m src.main
