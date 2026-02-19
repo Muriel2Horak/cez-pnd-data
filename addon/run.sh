@@ -1,29 +1,53 @@
-#!/usr/bin/with-bashio
+#!/usr/bin/env bash
+
+set -euo pipefail
 
 # HA Supervisor CEZ PND Add-on Startup Script
-# Uses bashio to read configuration and set environment variables
+OPTIONS_FILE="/data/options.json"
 
-# Read CEZ credentials from add-on configuration
-export CEZ_EMAIL=$(bashio::config 'email')
-export CEZ_PASSWORD=$(bashio::config 'password')
-export CEZ_ELECTROMETER_ID=$(bashio::config 'electrometer_id')
+read_option() {
+    local key="$1"
+    local default_value="${2:-}"
 
-# Read MQTT connection details from services
-export MQTT_HOST=$(bashio::services 'mqtt' 'host')
-export MQTT_PORT=$(bashio::services 'mqtt' 'port')
-export MQTT_USER=$(bashio::services 'mqtt' 'username')
-export MQTT_PASSWORD=$(bashio::services 'mqtt' 'password')
+    if [[ -f "$OPTIONS_FILE" ]]; then
+        python3 - "$OPTIONS_FILE" "$key" "$default_value" <<'PY'
+import json
+import sys
 
-# Log startup information (excluding password)
-bashio::log.info "Starting CEZ PND add-on..."
-bashio::log.info "Email: ${CEZ_EMAIL}"
-bashio::log.info "Electrometer ID: ${CEZ_ELECTROMETER_ID}"
-bashio::log.info "MQTT Host: ${MQTT_HOST}:${MQTT_PORT}"
+path, key, default = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    value = data.get(key, default)
+    if value is None:
+        value = default
+    if isinstance(value, (dict, list)):
+        print(json.dumps(value, separators=(",", ":")))
+    else:
+        print(str(value))
+except Exception:
+    print(default)
+PY
+    else
+        printf "%s" "$default_value"
+    fi
+}
 
-# Wait for MQTT service to be available
-bashio::log.info "Waiting for MQTT service..."
-bashio::wait.for_service mqtt
+export CEZ_EMAIL="$(read_option email "")"
+export CEZ_PASSWORD="$(read_option password "")"
+export CEZ_ELECTROMETER_ID="$(read_option electrometer_id "")"
+export CEZ_EAN="$(read_option ean "")"
+export CEZ_ELECTROMETERS="$(read_option electrometers "[]")"
 
-# Start the main Python application
-bashio::log.info "Starting main application..."
+export MQTT_HOST="${MQTT_HOST:-core-mosquitto}"
+export MQTT_PORT="${MQTT_PORT:-1883}"
+export MQTT_USER="${MQTT_USER:-}"
+export MQTT_PASSWORD="${MQTT_PASSWORD:-}"
+
+echo "Starting CEZ PND add-on..."
+echo "Email: ${CEZ_EMAIL}"
+echo "Electrometer ID: ${CEZ_ELECTROMETER_ID}"
+echo "MQTT Host: ${MQTT_HOST}:${MQTT_PORT}"
+
+echo "Starting main application..."
 exec python3 /app/src/main.py
