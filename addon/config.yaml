@@ -14,9 +14,13 @@ options:
   email: ""
   password: ""
   electrometer_id: ""
+  ean: ""
+  electrometers: "[]"
 schema:
   email: str
   password: password
   electrometer_id: str?
+  ean: str?
+  electrometers: str?
 map:
   - "share:rw"

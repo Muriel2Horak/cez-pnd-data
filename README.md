@@ -71,17 +71,41 @@ V konfiguraci add-onu vyplňte:
 | `email` | Ano | Přihlašovací e-mail k CEZ PND |
 | `password` | Ano | Heslo k CEZ PND |
 | `electrometer_id` | Ne | ID elektroměru (auto-detekce z dat, ruční zadání jako fallback) |
+| `electrometers` | Ne | JSON pole s více elektroměry (viz níže) |
 
-### 4. Spusťte add-on
+## Konfigurace více elektroměrů
 
-Klikněte na **Spustit**. Add-on:
+Pro sledování více elektroměrů/odběrných míst použijte novou konfiguraci `electrometers`:
 
-1. Přihlásí se k CEZ PND portálu
-2. Stáhne čtvrthodinová data
-3. Automaticky detekuje ID elektroměru
-4. Publikuje MQTT Discovery konfiguraci → senzory se objeví v HA
-5. Publikuje aktuální hodnoty na state topicy
-6. Opakuje každých 15 minut
+```yaml
+electrometers: '[{"electrometer_id": "784703", "ean": "85912345678901"}, {"electrometer_id": "784704", "ean": "85912345678902"}]'
+```
+
+Každý elektroměr se vytvoří jako samostatné zařízení v Home Assistant.
+
+### Názvy senzorů
+
+Senzory používají bilingvní názvy ve formátu: `CEZ {id} {EN} / {CZ}`
+
+Příklady:
+- `CEZ 784703 Consumption Power / Odběr`
+- `CEZ 784703 HDO Low Tariff Active / HDO Nízký tarif aktivní`
+
+## Migrace na více elektroměrů
+
+> **⚠️ Clean Break Migration**
+>
+> Při přechodu na konfiguraci `electrometers` se vytvoří nové entity s novými unique_id.
+> Staré entity zůstanou v Home Assistant, ale nebudou se aktualizovat.
+> Doporučujeme staré entity odstranit ručně v UI.
+
+### Backward Compatibility
+
+Stará konfigurace s `electrometer_id` a `ean` stále funguje pro jeden elektroměr:
+```yaml
+electrometer_id: "784703"
+ean: "85912345678901"
+```
 
 ## Architektura
 

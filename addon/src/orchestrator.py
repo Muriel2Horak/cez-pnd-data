@@ -53,15 +53,29 @@ class SessionExpiredError(Exception):
 class OrchestratorConfig:
     """Runtime configuration for the orchestrator loop."""
 
-    meter_id: str
-    ean: str = ""
+    electrometers: list[dict[str, str]]
     poll_interval_seconds: int = 900
     max_retries: int = 3
     retry_base_delay_seconds: float = 5.0
+    email: str = ""
 
     @property
     def poll_interval(self) -> timedelta:
         return timedelta(seconds=self.poll_interval_seconds)
+
+    @property
+    def meter_id(self) -> str:
+        """Backward compatibility: return first meter_id."""
+        if self.electrometers:
+            return self.electrometers[0].get("electrometer_id", "unknown")
+        return "unknown"
+
+    @property
+    def ean(self) -> str:
+        """Backward compatibility: return first ean."""
+        if self.electrometers:
+            return self.electrometers[0].get("ean", "")
+        return ""
 
 
 FetcherCallable = Callable[..., Awaitable[dict[str, Any]]]
@@ -91,8 +105,8 @@ class Orchestrator:
         self._config = config
         self._auth = auth_client
         self._fetcher = fetcher
-        self._mqtt = mqtt_publisher
         self._hdo_fetcher = hdo_fetcher
+        self._mqtt = mqtt_publisher
 
     async def run_loop(self) -> None:
         """Starts polling loop. Runs until cancelled."""
@@ -111,6 +125,10 @@ class Orchestrator:
 
     async def run_once(self) -> None:
         """Execute a single fetch-parse-publish cycle."""
+        cycle_start = datetime.now()
+        meter_id = self._config.meter_id
+        num_electrometers = len(self._config.electrometers)
+
         try:
             session = await self._auth.ensure_session()
         except Exception:
@@ -122,18 +140,25 @@ class Orchestrator:
 
         cookies = session.cookies
 
-        all_assembly_data = await self._fetch_all_assemblies(cookies)
+        all_assembly_data = await self._fetch_all_assemblies(cookies, meter_id)
 
         if all_assembly_data:
-            state: dict[str, Any] = {}
+            state: dict[str, dict[str, Any]] = {}
             for assembly_name, assembly_payload in all_assembly_data.items():
                 parser = CezDataParser(assembly_payload)
                 reading = parser.get_latest_reading_dict()
                 if reading:
+                    electrometer_id = (
+                        reading.get("electrometer_id") or self._config.meter_id
+                    )
+                    if electrometer_id not in state:
+                        state[electrometer_id] = {}
                     for parser_key, value in reading.items():
+                        if parser_key == "electrometer_id":
+                            continue
                         sensor_key = _PARSER_KEY_TO_SENSOR_KEY.get(parser_key)
                         if sensor_key is not None and value is not None:
-                            state[sensor_key] = value
+                            state[electrometer_id][sensor_key] = value
 
             if state:
                 try:
@@ -148,15 +173,29 @@ class Orchestrator:
                 logger.info("No data available in CEZ response, skipping PND publish")
 
         if self._hdo_fetcher:
-            try:
-                hdo_raw = await self._hdo_fetcher(cookies, self._config.ean)
-                hdo_data = parse_hdo_signals(hdo_raw)
-                self._mqtt.publish_hdo_state(hdo_data)
-            except Exception:
-                logger.error(
-                    "[%s] HDO fetch/parse/publish failed — PND unaffected",
-                    HDO_FETCH_ERROR,
-                )
+            for electrometer in self._config.electrometers:
+                meter_id = electrometer.get("electrometer_id", "unknown")
+                ean = electrometer.get("ean", "")
+                if not ean:
+                    continue
+                try:
+                    hdo_raw = await self._hdo_fetcher(cookies, ean)
+                    hdo_data = parse_hdo_signals(hdo_raw)
+                    self._mqtt.publish_hdo_state(hdo_data, electrometer_id=meter_id)
+                except Exception as e:
+                    logger.error(
+                        "[%s] HDO fetch/parse/publish failed for meter %s: %s — PND unaffected",
+                        HDO_FETCH_ERROR,
+                        meter_id,
+                        e,
+                    )
+
+        cycle_duration = (datetime.now() - cycle_start).total_seconds()
+        logger.info(
+            "Poll cycle completed in %.2fs for %d electrometer(s)",
+            cycle_duration,
+            num_electrometers,
+        )
 
     async def _fetch_assembly(
         self,
@@ -203,6 +242,7 @@ class Orchestrator:
     async def _fetch_all_assemblies(
         self,
         cookies: list[dict[str, Any]],
+        meter_id: str = "unknown",
     ) -> dict[str, Any]:
         """Fetch all 6 PND assemblies and return merged data."""
         results = {}
@@ -222,15 +262,18 @@ class Orchestrator:
                     results[config["name"]] = payload
                 else:
                     logger.warning(
-                        "[%s] Assembly %s fetch failed or has no data",
+                        "[%s] Assembly %s fetch failed or has no data for meter %s",
                         FETCH_ERROR,
                         config["name"],
+                        meter_id,
                     )
-            except Exception:
+            except Exception as e:
                 logger.error(
-                    "[%s] Assembly %s failed, continuing with others",
+                    "[%s] Assembly %s failed for meter %s: %s — continuing with others",
                     FETCH_ERROR,
                     config["name"],
+                    meter_id,
+                    e,
                 )
         return results
 

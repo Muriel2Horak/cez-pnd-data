@@ -9,7 +9,7 @@ import logging
 import os
 import signal
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 import paho.mqtt.client as mqtt_client
@@ -139,6 +139,53 @@ class MQTTClientWrapper:
         self._client.disconnect()
 
 
+def validate_electrometers_config(
+    electrometers_json: Optional[str],
+) -> List[Dict[str, str]]:
+    if not electrometers_json:
+        return []
+
+    try:
+        electrometers = json.loads(electrometers_json)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Malformed JSON in electrometers configuration: {e}")
+
+    if not isinstance(electrometers, list):
+        raise ValueError("Electrometers configuration must be a JSON array")
+
+    seen_electrometer_ids = set()
+    seen_eans = set()
+
+    for i, electrometer in enumerate(electrometers):
+        if not isinstance(electrometer, dict):
+            raise ValueError(f"Electrometer {i} must be an object")
+
+        if "electrometer_id" not in electrometer:
+            raise ValueError(
+                f"Electrometer {i} missing required field 'electrometer_id'"
+            )
+        if "ean" not in electrometer:
+            raise ValueError(f"Electrometer {i} missing required field 'ean'")
+
+        electrometer_id = electrometer["electrometer_id"]
+        ean = electrometer["ean"]
+
+        if not isinstance(electrometer_id, str) or not electrometer_id.strip():
+            raise ValueError(f"Electrometer {i} has empty or invalid 'electrometer_id'")
+        if not isinstance(ean, str) or not ean.strip():
+            raise ValueError(f"Electrometer {i} has empty or invalid 'ean'")
+
+        if electrometer_id in seen_electrometer_ids:
+            raise ValueError(f"Duplicate electrometer_id: {electrometer_id}")
+        if ean in seen_eans:
+            raise ValueError(f"Duplicate ean: {ean}")
+
+        seen_electrometer_ids.add(electrometer_id)
+        seen_eans.add(ean)
+
+    return electrometers
+
+
 def read_env_var(name: str, required: bool = True) -> Optional[str]:
     """Read environment variable with validation."""
     value = os.getenv(name)
@@ -166,7 +213,35 @@ def create_config() -> Dict[str, Dict[str, Any]]:
         },
     }
 
-    # Use electrometer_id from config if not auto
+    electrometers_json = read_env_var("CEZ_ELECTROMETERS", required=False)
+    try:
+        electrometers = validate_electrometers_config(electrometers_json)
+
+        # If CEZ_ELECTROMETERS is provided, use it as the canonical list
+        if electrometers:
+            config["cez"]["electrometers"] = electrometers
+        else:
+            # Fall back to single electrometer_id/ean pair for backward compatibility
+            electrometer_id = read_env_var("CEZ_ELECTROMETER_ID", required=False)
+            ean = read_env_var("CEZ_EAN", required=False)
+
+            if electrometer_id and ean:
+                config["cez"]["electrometers"] = [
+                    {"electrometer_id": electrometer_id, "ean": ean}
+                ]
+            elif electrometer_id:
+                # Only electrometer_id provided, ean will be empty
+                config["cez"]["electrometers"] = [
+                    {"electrometer_id": electrometer_id, "ean": ""}
+                ]
+            else:
+                # No electrometers configured - this should fail validation elsewhere
+                config["cez"]["electrometers"] = []
+
+    except ValueError as e:
+        logger.error(f"Invalid electrometers configuration: {e}")
+        sys.exit(1)
+
     if config["cez"]["electrometer_id"] == "auto":
         config["cez"]["electrometer_id"] = None
 
@@ -182,6 +257,23 @@ async def main():
     logger.info("Starting CEZ PND add-on")
     logger.info(f"Email: {config['cez']['email']}")
     logger.info(f"Electrometer ID: {config['cez']['electrometer_id'] or 'auto-detect'}")
+
+    # Log canonical electrometers list structure
+    if config["cez"].get("electrometers"):
+        electrometers = config["cez"]["electrometers"]
+        logger.info(f"Configured electrometers: {len(electrometers)}")
+        for i, electrometer in enumerate(electrometers, 1):
+            raw_ean = electrometer.get("ean", "")
+            if raw_ean and len(raw_ean) > 4:
+                ean_display = "*" * (len(raw_ean) - 4) + raw_ean[-4:]
+            else:
+                ean_display = "empty" if not raw_ean else raw_ean
+            logger.info(
+                f"  {i}. electrometer_id: {electrometer['electrometer_id']}, ean: {ean_display}"
+            )
+    else:
+        logger.warning("No electrometers configured - this may cause runtime errors")
+
     logger.info(f"MQTT Host: {config['mqtt']['host']}:{config['mqtt']['port']}")
 
     # Create MQTT client
@@ -200,9 +292,6 @@ async def main():
         credentials_provider=credentials_provider, session_store=session_store
     )
 
-    meter_id = config["cez"]["electrometer_id"] or "unknown"
-    ean = config["cez"]["ean"]
-
     # Create shared aiohttp.ClientSession for all API calls
     api_session = None
 
@@ -214,11 +303,16 @@ async def main():
     pnd_fetcher = None
     hdo_fetcher = None
 
-    mqtt_publisher = MqttPublisher(mqtt_client, meter_id)
+    mqtt_publisher = MqttPublisher(
+        mqtt_client,
+        electrometers=config["cez"]["electrometers"],
+    )
 
     # Create orchestrator configuration
     orchestrator_config = OrchestratorConfig(
-        meter_id=meter_id, ean=ean, poll_interval_seconds=900  # 15 minutes
+        electrometers=config["cez"]["electrometers"],
+        email=config["cez"]["email"],
+        poll_interval_seconds=900,  # 15 minutes
     )
 
     # Run orchestrator inside async context with shared aiohttp session
@@ -227,10 +321,14 @@ async def main():
 
         # API clients and fetchers
         api_session = aiohttp.ClientSession()
-        pnd_client = PndClient(electrometer_id=meter_id, session=api_session)
+        pnd_client = PndClient(session=api_session)
         dip_client = DipClient(session=api_session)
         pnd_fetcher = pnd_client.fetch_data
-        hdo_fetcher = dip_client.fetch_hdo if ean else None
+        has_hdo_ean = any(
+            isinstance(e, dict) and e.get("ean")
+            for e in config["cez"].get("electrometers", [])
+        )
+        hdo_fetcher = dip_client.fetch_hdo if has_hdo_ean else None
 
         orchestrator = Orchestrator(
             config=orchestrator_config,

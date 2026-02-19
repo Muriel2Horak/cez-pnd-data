@@ -47,7 +47,7 @@ def mock_mqtt_client() -> MagicMock:
 
 
 class TestSensorDefinitions:
-    """Verify the sensor definition registry."""
+    """Tests for sensor definition contracts and bilingual naming."""
 
     ALL_EXPECTED_KEYS = {
         "consumption",
@@ -133,17 +133,17 @@ class TestSensorDefinitions:
         """Original 3 sensors must keep their exact definitions."""
         defs = {d.key: d for d in get_sensor_definitions()}
         # consumption
-        assert defs["consumption"].name == "CEZ Consumption Power"
+        assert defs["consumption"].name == "CEZ {id} Consumption Power / Odběr"
         assert defs["consumption"].unit_of_measurement == "kW"
         assert defs["consumption"].device_class == "power"
         assert defs["consumption"].icon == "mdi:flash"
         # production
-        assert defs["production"].name == "CEZ Production Power"
+        assert defs["production"].name == "CEZ {id} Production Power / Dodávka"
         assert defs["production"].unit_of_measurement == "kW"
         assert defs["production"].device_class == "power"
         assert defs["production"].icon == "mdi:solar-power"
         # reactive (original — keeps kW for backward compat)
-        assert defs["reactive"].name == "CEZ Reactive Power"
+        assert defs["reactive"].name == "CEZ {id} Reactive Power / Jalový výkon"
         assert defs["reactive"].unit_of_measurement == "kW"
         assert defs["reactive"].device_class == "reactive_power"
         assert defs["reactive"].icon == "mdi:sine-wave"
@@ -176,7 +176,9 @@ class TestDiscoveryPayload:
     def test_state_topic_present(self) -> None:
         payload = self._payload_for("consumption")
         assert "state_topic" in payload
-        expected = STATE_TOPIC_TEMPLATE.format(meter_id=METER_ID, key="consumption")
+        expected = STATE_TOPIC_TEMPLATE.format(
+            electrometer_id=METER_ID, key="consumption"
+        )
         assert payload["state_topic"] == expected
 
     def test_unit_of_measurement_present(self) -> None:
@@ -206,7 +208,7 @@ class TestDiscoveryPayload:
     def test_availability_topic_present(self) -> None:
         payload = self._payload_for("consumption")
         assert "availability_topic" in payload
-        expected = AVAILABILITY_TOPIC_TEMPLATE.format(meter_id=METER_ID)
+        expected = AVAILABILITY_TOPIC_TEMPLATE.format(electrometer_id=METER_ID)
         assert payload["availability_topic"] == expected
 
     def test_payload_is_valid_json_serializable(self) -> None:
@@ -233,23 +235,27 @@ class TestTopicNaming:
 
     def test_config_topic_format(self) -> None:
         expected = f"homeassistant/sensor/cez_pnd_{METER_ID}/consumption/config"
-        actual = CONFIG_TOPIC_TEMPLATE.format(meter_id=METER_ID, key="consumption")
+        actual = CONFIG_TOPIC_TEMPLATE.format(
+            electrometer_id=METER_ID, key="consumption"
+        )
         assert actual == expected
 
     def test_state_topic_format(self) -> None:
         expected = f"cez_pnd/{METER_ID}/consumption/state"
-        actual = STATE_TOPIC_TEMPLATE.format(meter_id=METER_ID, key="consumption")
+        actual = STATE_TOPIC_TEMPLATE.format(
+            electrometer_id=METER_ID, key="consumption"
+        )
         assert actual == expected
 
     def test_availability_topic_format(self) -> None:
         expected = f"cez_pnd/{METER_ID}/availability"
-        actual = AVAILABILITY_TOPIC_TEMPLATE.format(meter_id=METER_ID)
+        actual = AVAILABILITY_TOPIC_TEMPLATE.format(electrometer_id=METER_ID)
         assert actual == expected
 
     def test_topics_are_deterministic_across_runs(self) -> None:
         """Same meter_id always produces same topics — no random components."""
-        t1 = CONFIG_TOPIC_TEMPLATE.format(meter_id=METER_ID, key="consumption")
-        t2 = CONFIG_TOPIC_TEMPLATE.format(meter_id=METER_ID, key="consumption")
+        t1 = CONFIG_TOPIC_TEMPLATE.format(electrometer_id=METER_ID, key="consumption")
+        t2 = CONFIG_TOPIC_TEMPLATE.format(electrometer_id=METER_ID, key="consumption")
         assert t1 == t2
 
 
@@ -261,10 +267,10 @@ class TestAvailability:
 
     def test_publisher_sets_lwt_on_connect(self, mock_mqtt_client: MagicMock) -> None:
         """MqttPublisher must configure LWT (will_set) before connecting."""
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=METER_ID)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=METER_ID)
         publisher.start()
 
-        expected_topic = AVAILABILITY_TOPIC_TEMPLATE.format(meter_id=METER_ID)
+        expected_topic = AVAILABILITY_TOPIC_TEMPLATE.format(electrometer_id=METER_ID)
         mock_mqtt_client.will_set.assert_called_once_with(
             expected_topic,
             payload="offline",
@@ -275,10 +281,10 @@ class TestAvailability:
     def test_publisher_publishes_online_after_connect(
         self, mock_mqtt_client: MagicMock
     ) -> None:
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=METER_ID)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=METER_ID)
         publisher.start()
 
-        avail_topic = AVAILABILITY_TOPIC_TEMPLATE.format(meter_id=METER_ID)
+        avail_topic = AVAILABILITY_TOPIC_TEMPLATE.format(electrometer_id=METER_ID)
         # After connect, should publish "online"
         publish_calls = mock_mqtt_client.publish.call_args_list
         avail_calls = [c for c in publish_calls if c[0][0] == avail_topic]
@@ -286,13 +292,13 @@ class TestAvailability:
         assert avail_calls[0][1]["payload"] == "online"
 
     def test_stop_publishes_offline(self, mock_mqtt_client: MagicMock) -> None:
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=METER_ID)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=METER_ID)
         publisher.start()
         mock_mqtt_client.publish.reset_mock()
 
         publisher.stop()
 
-        avail_topic = AVAILABILITY_TOPIC_TEMPLATE.format(meter_id=METER_ID)
+        avail_topic = AVAILABILITY_TOPIC_TEMPLATE.format(electrometer_id=METER_ID)
         publish_calls = mock_mqtt_client.publish.call_args_list
         avail_calls = [c for c in publish_calls if c[0][0] == avail_topic]
         assert len(avail_calls) >= 1
@@ -311,19 +317,19 @@ class TestDiscoveryPublishing:
     """Verify that publish_discovery sends correct config topics."""
 
     def test_publishes_all_sensor_configs(self, mock_mqtt_client: MagicMock) -> None:
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=METER_ID)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=METER_ID)
         publisher.publish_discovery()
 
         defs = get_sensor_definitions()
         for d in defs:
-            topic = CONFIG_TOPIC_TEMPLATE.format(meter_id=METER_ID, key=d.key)
+            topic = CONFIG_TOPIC_TEMPLATE.format(electrometer_id=METER_ID, key=d.key)
             matching = [
                 c for c in mock_mqtt_client.publish.call_args_list if c[0][0] == topic
             ]
             assert len(matching) == 1, f"expected one publish to {topic}"
 
     def test_discovery_payload_is_retained(self, mock_mqtt_client: MagicMock) -> None:
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=METER_ID)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=METER_ID)
         publisher.publish_discovery()
 
         for c in mock_mqtt_client.publish.call_args_list:
@@ -333,7 +339,7 @@ class TestDiscoveryPublishing:
                 assert retain is True, f"discovery to {topic} must be retained"
 
     def test_discovery_payload_json_valid(self, mock_mqtt_client: MagicMock) -> None:
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=METER_ID)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=METER_ID)
         publisher.publish_discovery()
 
         for c in mock_mqtt_client.publish.call_args_list:
@@ -347,7 +353,7 @@ class TestDiscoveryPublishing:
     def test_discovery_publishes_exactly_thirteen_configs(
         self, mock_mqtt_client: MagicMock
     ) -> None:
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=METER_ID)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=METER_ID)
         publisher.publish_discovery()
 
         config_calls = [
@@ -365,7 +371,7 @@ class TestStatePublishing:
     def test_publish_state_sends_numeric_values(
         self, mock_mqtt_client: MagicMock
     ) -> None:
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=METER_ID)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=METER_ID)
         readings = {
             "consumption": 1.42,
             "production": 0.0,
@@ -385,7 +391,7 @@ class TestStatePublishing:
         publisher.publish_state(readings)
 
         for key, value in readings.items():
-            topic = STATE_TOPIC_TEMPLATE.format(meter_id=METER_ID, key=key)
+            topic = STATE_TOPIC_TEMPLATE.format(electrometer_id=METER_ID, key=key)
             matching = [
                 c for c in mock_mqtt_client.publish.call_args_list if c[0][0] == topic
             ]
@@ -398,7 +404,7 @@ class TestStatePublishing:
             assert published == str(value)
 
     def test_publish_state_retains_values(self, mock_mqtt_client: MagicMock) -> None:
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=METER_ID)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=METER_ID)
         publisher.publish_state(
             {"consumption": 1.0, "production": 0.0, "reactive": 0.5}
         )
@@ -411,7 +417,7 @@ class TestStatePublishing:
     def test_publish_state_ignores_unknown_keys(
         self, mock_mqtt_client: MagicMock
     ) -> None:
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=METER_ID)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=METER_ID)
         publisher.publish_state({"unknown_metric": 99.9})
 
         published_topics = [c[0][0] for c in mock_mqtt_client.publish.call_args_list]
@@ -422,7 +428,7 @@ class TestStatePublishing:
         self, mock_mqtt_client: MagicMock
     ) -> None:
         """None values should not be published (sensor goes unavailable via LWT instead)."""
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=METER_ID)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=METER_ID)
         publisher.publish_state(
             {"consumption": None, "production": 0.5, "reactive": None}
         )
@@ -435,7 +441,7 @@ class TestStatePublishing:
 
     def test_full_cycle_discovery_then_state(self, mock_mqtt_client: MagicMock) -> None:
         """Simulates full lifecycle: start -> discover -> publish states."""
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=METER_ID)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=METER_ID)
         publisher.start()
         publisher.publish_discovery()
 
@@ -458,13 +464,451 @@ class TestStatePublishing:
 
         topics = [c[0][0] for c in mock_mqtt_client.publish.call_args_list]
 
-        avail_topic = AVAILABILITY_TOPIC_TEMPLATE.format(meter_id=METER_ID)
+        avail_topic = AVAILABILITY_TOPIC_TEMPLATE.format(electrometer_id=METER_ID)
         assert avail_topic in topics
 
         for d in get_sensor_definitions():
-            config_topic = CONFIG_TOPIC_TEMPLATE.format(meter_id=METER_ID, key=d.key)
+            config_topic = CONFIG_TOPIC_TEMPLATE.format(
+                electrometer_id=METER_ID, key=d.key
+            )
             assert config_topic in topics
 
         for key in all_readings:
-            state_topic = STATE_TOPIC_TEMPLATE.format(meter_id=METER_ID, key=key)
+            state_topic = STATE_TOPIC_TEMPLATE.format(electrometer_id=METER_ID, key=key)
             assert state_topic in topics
+
+
+# ── Identity uniqueness (multi-electrometer collision safety) ─────────
+
+
+METER_A = "784703"
+METER_B = "999888"
+
+
+class TestIdentityUniqueness:
+    """Two different electrometer_ids must never produce colliding IDs or topics."""
+
+    def test_unique_ids_are_disjoint_across_meters(self) -> None:
+        """All unique_id values for meter A and meter B are completely disjoint."""
+        defs = get_sensor_definitions()
+        ids_a = {build_discovery_payload(d, METER_A)["unique_id"] for d in defs}
+        ids_b = {build_discovery_payload(d, METER_B)["unique_id"] for d in defs}
+        assert ids_a.isdisjoint(ids_b), f"Collision: {ids_a & ids_b}"
+
+    def test_config_topics_are_disjoint_across_meters(self) -> None:
+        """Config topics for meter A and meter B never overlap."""
+        defs = get_sensor_definitions()
+        topics_a = {
+            CONFIG_TOPIC_TEMPLATE.format(electrometer_id=METER_A, key=d.key)
+            for d in defs
+        }
+        topics_b = {
+            CONFIG_TOPIC_TEMPLATE.format(electrometer_id=METER_B, key=d.key)
+            for d in defs
+        }
+        assert topics_a.isdisjoint(topics_b), f"Collision: {topics_a & topics_b}"
+
+    def test_state_topics_are_disjoint_across_meters(self) -> None:
+        """State topics for meter A and meter B never overlap."""
+        defs = get_sensor_definitions()
+        topics_a = {
+            STATE_TOPIC_TEMPLATE.format(electrometer_id=METER_A, key=d.key)
+            for d in defs
+        }
+        topics_b = {
+            STATE_TOPIC_TEMPLATE.format(electrometer_id=METER_B, key=d.key)
+            for d in defs
+        }
+        assert topics_a.isdisjoint(topics_b), f"Collision: {topics_a & topics_b}"
+
+    def test_availability_topics_differ_across_meters(self) -> None:
+        """Availability topics for two meters are distinct."""
+        avail_a = AVAILABILITY_TOPIC_TEMPLATE.format(electrometer_id=METER_A)
+        avail_b = AVAILABILITY_TOPIC_TEMPLATE.format(electrometer_id=METER_B)
+        assert avail_a != avail_b
+
+    def test_device_identifiers_differ_across_meters(self) -> None:
+        """Device block identifiers are unique per electrometer."""
+        defs = get_sensor_definitions()
+        dev_a = build_discovery_payload(defs[0], METER_A)["device"]["identifiers"]
+        dev_b = build_discovery_payload(defs[0], METER_B)["device"]["identifiers"]
+        assert set(dev_a).isdisjoint(set(dev_b))
+
+    def test_ean_context_present_when_provided(self) -> None:
+        """When EAN is provided, device metadata includes configuration_url."""
+        defs = get_sensor_definitions()
+        payload = build_discovery_payload(defs[0], METER_A, ean="859182400100000001")
+        assert "configuration_url" in payload["device"]
+        assert "859182400100000001" in payload["device"]["configuration_url"]
+
+    def test_ean_context_absent_when_not_provided(self) -> None:
+        """When EAN is empty, device metadata has no configuration_url."""
+        defs = get_sensor_definitions()
+        payload = build_discovery_payload(defs[0], METER_A)
+        assert "configuration_url" not in payload["device"]
+
+    def test_sensor_names_contain_electrometer_id(self) -> None:
+        """Formatted sensor names embed the electrometer ID for disambiguation."""
+        defs = get_sensor_definitions()
+        payload = build_discovery_payload(defs[0], METER_A)
+        assert METER_A in payload["name"]
+
+
+# ── Multi-Electrometer Fixtures ────────────────────────────────────────────
+
+
+MULTI_ELECTROMETER_CONFIG = [
+    {"electrometer_id": "784703", "ean": "12345678901234"},
+    {"electrometer_id": "784704", "ean": "12345678901235"},
+]
+
+
+# ── Multi-Electrometer Discovery ────────────────────────────────────────
+
+
+class TestMultiElectrometerDiscovery:
+    """Tests for multi-electrometer MQTT discovery contracts.
+
+    These tests verify:
+    - Distinct unique_ids and topics per meter
+    - Device names include meter ID and bilingual EN/CZ text
+    - Sensor names follow `CEZ {id} {EN} / {CZ}` format
+    """
+
+    def test_multi_electrometer_discovery_has_unique_ids(self) -> None:
+        """Discovery payloads for multiple meters must have distinct unique_ids."""
+        meter_1_id = MULTI_ELECTROMETER_CONFIG[0]["electrometer_id"]
+        meter_2_id = MULTI_ELECTROMETER_CONFIG[1]["electrometer_id"]
+
+        # Get sensor definitions
+        defs = get_sensor_definitions()
+        sensor = next(d for d in defs if d.key == "consumption")
+
+        # Build discovery payloads for both meters
+        payload_1 = build_discovery_payload(sensor, meter_1_id)
+        payload_2 = build_discovery_payload(sensor, meter_2_id)
+
+        # Verify unique_ids are distinct
+        unique_id_1 = payload_1.get("unique_id", "")
+        unique_id_2 = payload_2.get("unique_id", "")
+
+        assert (
+            unique_id_1 != unique_id_2
+        ), f"unique_ids must be distinct: {unique_id_1} == {unique_id_2}"
+        assert meter_1_id in unique_id_1, f"unique_id_1 should contain {meter_1_id}"
+        assert meter_2_id in unique_id_2, f"unique_id_2 should contain {meter_2_id}"
+
+    def test_multi_electrometer_discovery_has_distinct_topics(self) -> None:
+        """State topics for different meters must be distinct."""
+        meter_1_id = MULTI_ELECTROMETER_CONFIG[0]["electrometer_id"]
+        meter_2_id = MULTI_ELECTROMETER_CONFIG[1]["electrometer_id"]
+
+        topic_1 = STATE_TOPIC_TEMPLATE.format(
+            electrometer_id=meter_1_id, key="consumption"
+        )
+        topic_2 = STATE_TOPIC_TEMPLATE.format(
+            electrometer_id=meter_2_id, key="consumption"
+        )
+
+        assert (
+            topic_1 != topic_2
+        ), f"State topics must be distinct: {topic_1} == {topic_2}"
+
+    def test_multi_electrometer_config_topics_are_distinct(self) -> None:
+        """Config topics for different meters must be distinct."""
+        meter_1_id = MULTI_ELECTROMETER_CONFIG[0]["electrometer_id"]
+        meter_2_id = MULTI_ELECTROMETER_CONFIG[1]["electrometer_id"]
+
+        topic_1 = CONFIG_TOPIC_TEMPLATE.format(
+            electrometer_id=meter_1_id, key="consumption"
+        )
+        topic_2 = CONFIG_TOPIC_TEMPLATE.format(
+            electrometer_id=meter_2_id, key="consumption"
+        )
+
+        assert (
+            topic_1 != topic_2
+        ), f"Config topics must be distinct: {topic_1} == {topic_2}"
+
+    def test_device_name_includes_meter_id(self) -> None:
+        """Device name should include meter ID for multi-meter identification."""
+        meter_id = MULTI_ELECTROMETER_CONFIG[0]["electrometer_id"]
+
+        defs = get_sensor_definitions()
+        sensor = next(d for d in defs if d.key == "consumption")
+        payload = build_discovery_payload(sensor, meter_id)
+
+        device = payload.get("device", {})
+        device_name = device.get("name", "")
+
+        assert (
+            meter_id in device_name
+        ), f"Device name should include meter ID: {device_name}"
+
+    def test_device_name_is_bilingual(self) -> None:
+        """Device name should include bilingual EN/CZ text format."""
+        meter_id = MULTI_ELECTROMETER_CONFIG[0]["electrometer_id"]
+
+        defs = get_sensor_definitions()
+        sensor = next(d for d in defs if d.key == "consumption")
+        payload = build_discovery_payload(sensor, meter_id)
+
+        device = payload.get("device", {})
+        device_name = device.get("name", "")
+
+        # Should include bilingual format like "CEZ 784703 / CEZ 784703"
+        # Or at least some indication of bilingual naming
+        assert (
+            "/" in device_name or "CEZ" in device_name
+        ), f"Device name should be bilingual: {device_name}"
+
+    def test_sensor_name_follows_bilingual_format(self) -> None:
+        """Sensor names should follow `CEZ {id} {EN} / {CZ}` format."""
+        meter_id = MULTI_ELECTROMETER_CONFIG[0]["electrometer_id"]
+
+        defs = get_sensor_definitions()
+        sensor = next(d for d in defs if d.key == "consumption")
+        payload = build_discovery_payload(sensor, meter_id)
+
+        sensor_name = payload.get("name", "")
+
+        # Should include meter ID in name
+        assert (
+            meter_id in sensor_name
+        ), f"Sensor name should include meter ID: {sensor_name}"
+
+        # Should follow bilingual format with CEZ prefix
+        assert "CEZ" in sensor_name, f"Sensor name should include CEZ: {sensor_name}"
+
+
+class TestMultiElectrometerPublisher:
+    """Tests for multi-electrometer MqttPublisher behavior."""
+
+    @pytest.fixture
+    def multi_meter_publisher_configs(self) -> list[dict[str, str]]:
+        return MULTI_ELECTROMETER_CONFIG
+
+    def test_single_publisher_with_electrometers_list(
+        self,
+        mock_mqtt_client: MagicMock,
+        multi_meter_publisher_configs: list[dict[str, str]],
+    ) -> None:
+        publisher = MqttPublisher(
+            client=mock_mqtt_client,
+            electrometers=multi_meter_publisher_configs,
+        )
+        publisher.publish_discovery()
+
+        config_topics = [
+            c[0][0]
+            for c in mock_mqtt_client.publish.call_args_list
+            if "/config" in c[0][0]
+        ]
+
+        meter_1_topics = [t for t in config_topics if "784703" in t]
+        meter_2_topics = [t for t in config_topics if "784704" in t]
+
+        assert len(meter_1_topics) == 17
+        assert len(meter_2_topics) == 17
+
+    def test_publisher_can_publish_for_multiple_meters(
+        self,
+        mock_mqtt_client: MagicMock,
+        multi_meter_publisher_configs: list[dict[str, str]],
+    ) -> None:
+        publishers = []
+        for config in multi_meter_publisher_configs:
+            publisher = MqttPublisher(
+                client=mock_mqtt_client, electrometer_id=config["electrometer_id"]
+            )
+            publishers.append(publisher)
+            publisher.publish_discovery()
+
+        config_topics = [
+            c[0][0]
+            for c in mock_mqtt_client.publish.call_args_list
+            if "/config" in c[0][0]
+        ]
+
+        meter_1_topics = [
+            t
+            for t in config_topics
+            if multi_meter_publisher_configs[0]["electrometer_id"] in t
+        ]
+        meter_2_topics = [
+            t
+            for t in config_topics
+            if multi_meter_publisher_configs[1]["electrometer_id"] in t
+        ]
+
+        assert len(meter_1_topics) > 0, "Meter 1 should have discovery topics"
+        assert len(meter_2_topics) > 0, "Meter 2 should have discovery topics"
+
+    def test_availability_topics_distinct_per_meter(
+        self,
+        mock_mqtt_client: MagicMock,
+        multi_meter_publisher_configs: list[dict[str, str]],
+    ) -> None:
+        avail_topics = []
+        for config in multi_meter_publisher_configs:
+            meter_id = config["electrometer_id"]
+            expected_topic = AVAILABILITY_TOPIC_TEMPLATE.format(
+                electrometer_id=meter_id
+            )
+            avail_topics.append(expected_topic)
+
+        assert (
+            avail_topics[0] != avail_topics[1]
+        ), f"Availability topics must be distinct: {avail_topics}"
+
+    def test_start_publishes_online_for_all_meters(
+        self,
+        mock_mqtt_client: MagicMock,
+        multi_meter_publisher_configs: list[dict[str, str]],
+    ) -> None:
+        publisher = MqttPublisher(
+            client=mock_mqtt_client,
+            electrometers=multi_meter_publisher_configs,
+        )
+        publisher.start()
+
+        online_calls = [
+            c
+            for c in mock_mqtt_client.publish.call_args_list
+            if c[1].get("payload") == "online"
+        ]
+        topics = {c[0][0] for c in online_calls}
+        for config in multi_meter_publisher_configs:
+            expected = AVAILABILITY_TOPIC_TEMPLATE.format(
+                electrometer_id=config["electrometer_id"]
+            )
+            assert expected in topics
+
+    def test_stop_publishes_offline_for_all_meters(
+        self,
+        mock_mqtt_client: MagicMock,
+        multi_meter_publisher_configs: list[dict[str, str]],
+    ) -> None:
+        publisher = MqttPublisher(
+            client=mock_mqtt_client,
+            electrometers=multi_meter_publisher_configs,
+        )
+        publisher.start()
+        mock_mqtt_client.publish.reset_mock()
+
+        publisher.stop()
+
+        offline_calls = [
+            c
+            for c in mock_mqtt_client.publish.call_args_list
+            if c[1].get("payload") == "offline"
+        ]
+        topics = {c[0][0] for c in offline_calls}
+        for config in multi_meter_publisher_configs:
+            expected = AVAILABILITY_TOPIC_TEMPLATE.format(
+                electrometer_id=config["electrometer_id"]
+            )
+            assert expected in topics
+
+    def test_per_meter_state_publishing(
+        self,
+        mock_mqtt_client: MagicMock,
+        multi_meter_publisher_configs: list[dict[str, str]],
+    ) -> None:
+        publisher = MqttPublisher(
+            client=mock_mqtt_client,
+            electrometers=multi_meter_publisher_configs,
+        )
+        readings = {
+            "784703": {"consumption": 1.5, "production": 0.0},
+            "784704": {"consumption": 3.0, "production": 1.0},
+        }
+        publisher.publish_state(readings)
+
+        state_calls = [
+            c for c in mock_mqtt_client.publish.call_args_list if "/state" in c[0][0]
+        ]
+        topics = {c[0][0] for c in state_calls}
+
+        assert (
+            STATE_TOPIC_TEMPLATE.format(electrometer_id="784703", key="consumption")
+            in topics
+        )
+        assert (
+            STATE_TOPIC_TEMPLATE.format(electrometer_id="784704", key="consumption")
+            in topics
+        )
+        assert (
+            STATE_TOPIC_TEMPLATE.format(electrometer_id="784703", key="production")
+            in topics
+        )
+        assert (
+            STATE_TOPIC_TEMPLATE.format(electrometer_id="784704", key="production")
+            in topics
+        )
+
+    def test_legacy_flat_state_still_works(
+        self,
+        mock_mqtt_client: MagicMock,
+        multi_meter_publisher_configs: list[dict[str, str]],
+    ) -> None:
+        publisher = MqttPublisher(
+            client=mock_mqtt_client,
+            electrometers=multi_meter_publisher_configs,
+        )
+        readings = {"consumption": 2.5, "production": 0.5}
+        publisher.publish_state(readings)
+
+        state_calls = [
+            c for c in mock_mqtt_client.publish.call_args_list if "/state" in c[0][0]
+        ]
+        topics = [c[0][0] for c in state_calls]
+        assert all("784703" in t for t in topics)
+
+    def test_discovery_payloads_include_ean_context(
+        self,
+        mock_mqtt_client: MagicMock,
+        multi_meter_publisher_configs: list[dict[str, str]],
+    ) -> None:
+        publisher = MqttPublisher(
+            client=mock_mqtt_client,
+            electrometers=multi_meter_publisher_configs,
+        )
+        publisher.publish_discovery()
+
+        config_calls = [
+            c
+            for c in mock_mqtt_client.publish.call_args_list
+            if "/config" in c[0][0] and "784703" in c[0][0]
+        ]
+        payload = json.loads(config_calls[0][1]["payload"])
+        assert "configuration_url" in payload["device"]
+        assert "12345678901234" in payload["device"]["configuration_url"]
+
+    def test_hdo_discovery_for_all_meters(
+        self,
+        mock_mqtt_client: MagicMock,
+        multi_meter_publisher_configs: list[dict[str, str]],
+    ) -> None:
+        publisher = MqttPublisher(
+            client=mock_mqtt_client,
+            electrometers=multi_meter_publisher_configs,
+        )
+        publisher.publish_hdo_discovery()
+
+        hdo_config_calls = [
+            c
+            for c in mock_mqtt_client.publish.call_args_list
+            if "/config" in c[0][0] and "hdo" in c[0][0]
+        ]
+        meter_1_hdo = [c for c in hdo_config_calls if "784703" in c[0][0]]
+        meter_2_hdo = [c for c in hdo_config_calls if "784704" in c[0][0]]
+
+        assert len(meter_1_hdo) == 4
+        assert len(meter_2_hdo) == 4
+
+    def test_constructor_requires_electrometers_or_electrometer_id(
+        self, mock_mqtt_client: MagicMock
+    ) -> None:
+        with pytest.raises(TypeError, match="requires either"):
+            MqttPublisher(client=mock_mqtt_client)

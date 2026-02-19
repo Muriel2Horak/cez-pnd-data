@@ -115,7 +115,7 @@ class TestFullPipelineSmoke:
         assert latest_dict is not None
 
         # ── Step 3: MQTT Discovery ────────────────────────────────
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=meter_id)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=meter_id)
         publisher.start()
 
         # Verify LWT was set before connect
@@ -123,7 +123,7 @@ class TestFullPipelineSmoke:
         mock_mqtt_client.connect.assert_called_once()
 
         # Verify online availability published
-        avail_topic = AVAILABILITY_TOPIC_TEMPLATE.format(meter_id=meter_id)
+        avail_topic = AVAILABILITY_TOPIC_TEMPLATE.format(electrometer_id=meter_id)
         online_calls = [
             c
             for c in mock_mqtt_client.publish.call_args_list
@@ -142,7 +142,7 @@ class TestFullPipelineSmoke:
         assert len(all_defs) == 17
         for sensor in all_defs:
             config_topic = CONFIG_TOPIC_TEMPLATE.format(
-                meter_id=meter_id, key=sensor.key
+                electrometer_id=meter_id, key=sensor.key
             )
             matching = [
                 c
@@ -178,7 +178,7 @@ class TestFullPipelineSmoke:
 
         # Assert at least one numeric state update per sensor
         for key in ("consumption", "production", "reactive"):
-            state_topic = STATE_TOPIC_TEMPLATE.format(meter_id=meter_id, key=key)
+            state_topic = STATE_TOPIC_TEMPLATE.format(electrometer_id=meter_id, key=key)
             state_calls = [
                 c
                 for c in mock_mqtt_client.publish.call_args_list
@@ -253,7 +253,7 @@ class TestStateNumericValues:
         assert latest is not None
 
         meter_id = detect_electrometer_id(sample_payload) or "unknown"
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=meter_id)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=meter_id)
 
         readings = {
             "consumption": latest.consumption_kw,
@@ -441,9 +441,12 @@ class TestFull17SensorPipeline:
             )
 
         meter_id = "784703"
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=meter_id)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=meter_id)
 
-        config = OrchestratorConfig(meter_id=meter_id, poll_interval_seconds=900)
+        config = OrchestratorConfig(
+            electrometers=[{"electrometer_id": meter_id, "ean": ""}],
+            poll_interval_seconds=900,
+        )
         orch = Orchestrator(
             config=config,
             auth_client=auth_client,
@@ -474,7 +477,7 @@ class TestFull17SensorPipeline:
         }
 
         for key, expected_value in expected_sensors.items():
-            state_topic = STATE_TOPIC_TEMPLATE.format(meter_id=meter_id, key=key)
+            state_topic = STATE_TOPIC_TEMPLATE.format(electrometer_id=meter_id, key=key)
             state_calls = [
                 c
                 for c in mock_mqtt_client.publish.call_args_list
@@ -491,7 +494,7 @@ class TestFull17SensorPipeline:
         self, mock_mqtt_client: MagicMock
     ) -> None:
         meter_id = "784703"
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=meter_id)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=meter_id)
         publisher.start()
 
         mock_mqtt_client.publish.reset_mock()
@@ -502,7 +505,7 @@ class TestFull17SensorPipeline:
 
         for sensor in all_defs:
             config_topic = CONFIG_TOPIC_TEMPLATE.format(
-                meter_id=meter_id, key=sensor.key
+                electrometer_id=meter_id, key=sensor.key
             )
             matching = [
                 c
@@ -535,11 +538,10 @@ class TestFull17SensorPipeline:
         hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
 
         meter_id = "784703"
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=meter_id)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=meter_id)
 
         config = OrchestratorConfig(
-            meter_id=meter_id,
-            ean="859182400100000001",
+            electrometers=[{"electrometer_id": meter_id, "ean": "859182400100000001"}],
             poll_interval_seconds=900,
         )
         orch = Orchestrator(
@@ -563,7 +565,7 @@ class TestFull17SensorPipeline:
             "hdo_signal",
         ]
         for key in hdo_keys:
-            state_topic = STATE_TOPIC_TEMPLATE.format(meter_id=meter_id, key=key)
+            state_topic = STATE_TOPIC_TEMPLATE.format(electrometer_id=meter_id, key=key)
             state_calls = [
                 c
                 for c in mock_mqtt_client.publish.call_args_list
@@ -597,11 +599,10 @@ class TestFull17SensorPipeline:
         hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
 
         meter_id = "784703"
-        publisher = MqttPublisher(client=mock_mqtt_client, meter_id=meter_id)
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=meter_id)
 
         config = OrchestratorConfig(
-            meter_id=meter_id,
-            ean="859182400100000001",
+            electrometers=[{"electrometer_id": meter_id, "ean": "859182400100000001"}],
             poll_interval_seconds=900,
         )
         orch = Orchestrator(
@@ -623,7 +624,7 @@ class TestFull17SensorPipeline:
         hdo_keys = [s.key for s in get_hdo_sensor_definitions()]
         for key in pnd_keys + hdo_keys:
             all_expected_topics.add(
-                STATE_TOPIC_TEMPLATE.format(meter_id=meter_id, key=key)
+                STATE_TOPIC_TEMPLATE.format(electrometer_id=meter_id, key=key)
             )
 
         published_topics = {c[0][0] for c in mock_mqtt_client.publish.call_args_list}
