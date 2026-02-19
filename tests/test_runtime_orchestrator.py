@@ -48,11 +48,15 @@ def _make_reading_dict(consumption: float = 1.42) -> dict[str, Any]:
 
 def _make_config(**overrides: Any) -> OrchestratorConfig:
     """Build an OrchestratorConfig with sensible test defaults."""
+    electrometer_id = overrides.pop("meter_id", "784703")
+    ean = overrides.pop("ean", "85912345678901")
+
     defaults = {
-        "poll_interval_seconds": 900,  # 15 min
+        "poll_interval_seconds": 900,
         "max_retries": 3,
-        "retry_base_delay_seconds": 0.01,  # Fast for tests
-        "meter_id": "784703",
+        "retry_base_delay_seconds": 0.01,
+        "electrometers": [{"electrometer_id": electrometer_id, "ean": ean}],
+        "email": "test@example.com",
     }
     defaults.update(overrides)
     return OrchestratorConfig(**defaults)
@@ -84,12 +88,15 @@ class FakeFetcher:
                 {
                     "1000": {"v": "14.02.2026 00:15"},
                     "1001": {"v": "1,42", "s": 32},
-                    "1002": {"v": "0,0", "s": 32},
+                    "1002": {"v": "0,05", "s": 32},
                     "1003": {"v": "5,46", "s": 32},
                 },
             ],
         }
-        self.fetch = AsyncMock(return_value=self._payload)
+        self.fetch = AsyncMock(side_effect=self._fetch)
+
+    async def _fetch(self, cookies: Any, **kwargs: Any) -> dict:
+        return self._payload
 
 
 class FakeMqttPublisher:
@@ -112,20 +119,28 @@ class TestOrchestratorConfig:
     """OrchestratorConfig provides sensible defaults."""
 
     def test_default_poll_interval_is_15_minutes(self) -> None:
-        config = OrchestratorConfig(meter_id="123")
+        config = _make_config()
         assert config.poll_interval_seconds == 900
 
     def test_default_max_retries(self) -> None:
-        config = OrchestratorConfig(meter_id="123")
+        config = _make_config()
         assert config.max_retries == 3
 
     def test_custom_poll_interval(self) -> None:
-        config = OrchestratorConfig(meter_id="123", poll_interval_seconds=300)
+        config = _make_config(poll_interval_seconds=300)
         assert config.poll_interval_seconds == 300
 
     def test_poll_interval_as_timedelta(self) -> None:
-        config = OrchestratorConfig(meter_id="123")
+        config = _make_config()
         assert config.poll_interval == timedelta(seconds=900)
+
+    def test_backward_compat_meter_id(self) -> None:
+        config = _make_config()
+        assert config.meter_id == "784703"
+
+    def test_backward_compat_ean(self) -> None:
+        config = _make_config()
+        assert config.ean == "85912345678901"
 
 
 # ===========================================================================
@@ -159,8 +174,11 @@ class TestSingleCycle:
         # MQTT state was published
         mqtt.publish_state.assert_called_once()
         state_arg = mqtt.publish_state.call_args[0][0]
-        assert "consumption" in state_arg
-        assert state_arg["consumption"] == 1.42
+        # State should be per-electrometer format: {electrometer_id: {sensor_key: value}}
+        assert "784703" in state_arg
+        meter_state = state_arg["784703"]
+        assert "consumption" in meter_state
+        assert meter_state["consumption"] == 1.42
 
     @pytest.mark.asyncio
     async def test_single_cycle_skips_publish_when_no_data(self) -> None:
@@ -271,7 +289,8 @@ class TestTransientRetry:
 
         mqtt.publish_state.assert_called_once()
         state = mqtt.publish_state.call_args[0][0]
-        assert "daily_consumption" in state
+        # State should be per-electrometer format: {electrometer_id: {sensor_key: value}}
+        assert "consumption" in state.get("784703", {})
 
     @pytest.mark.asyncio
     async def test_all_assemblies_fail_no_publish(self) -> None:
@@ -779,6 +798,10 @@ class TestMultiAssemblyFetch:
         mqtt.publish_state.assert_called_once()
         state = mqtt.publish_state.call_args[0][0]
 
+        # State should now be per-electrometer format: {electrometer_id: {sensor_key: value}}
+        assert "784703" in state
+        meter_state = state["784703"]
+
         expected_keys = {
             "consumption",
             "production",
@@ -794,7 +817,7 @@ class TestMultiAssemblyFetch:
             "register_low_tariff",
             "register_high_tariff",
         }
-        assert set(state.keys()) == expected_keys
+        assert set(meter_state.keys()) == expected_keys
 
     @pytest.mark.asyncio
     async def test_multi_assembly_values_are_correct(self) -> None:
@@ -814,16 +837,20 @@ class TestMultiAssemblyFetch:
         await orch.run_once()
 
         state = mqtt.publish_state.call_args[0][0]
-        assert state["consumption"] == 1.42
-        assert state["production"] == 0.05
-        assert state["reactive"] == 5.46
-        assert state["reactive_import_inductive"] == 0.31
-        assert state["reactive_export_capacitive"] == 0.12
-        assert state["daily_consumption"] == 23.45
-        assert state["daily_production"] == 1.23
-        assert state["register_consumption"] == 12345.67
-        assert state["register_low_tariff"] == 8000.0
-        assert state["register_high_tariff"] == 4345.67
+        # State should be per-electrometer format: {electrometer_id: {sensor_key: value}}
+        assert "784703" in state
+        meter_state = state["784703"]
+
+        assert meter_state["consumption"] == 1.42
+        assert meter_state["production"] == 0.05
+        assert meter_state["reactive"] == 5.46
+        assert meter_state["reactive_import_inductive"] == 0.31
+        assert meter_state["reactive_export_capacitive"] == 0.12
+        assert meter_state["daily_consumption"] == 23.45
+        assert meter_state["daily_production"] == 1.23
+        assert meter_state["register_consumption"] == 12345.67
+        assert meter_state["register_low_tariff"] == 8000.0
+        assert meter_state["register_high_tariff"] == 4345.67
 
     @pytest.mark.asyncio
     async def test_assembly_configs_has_six_entries(self) -> None:
@@ -868,9 +895,12 @@ class TestPartialAssemblyFailure:
 
         mqtt.publish_state.assert_called_once()
         state = mqtt.publish_state.call_args[0][0]
-        assert state["consumption"] == 1.42
-        assert "reactive_import_inductive" not in state
-        assert "reactive_export_capacitive" not in state
+        # State should be per-electrometer format: {electrometer_id: {sensor_key: value}}
+        assert "784703" in state
+        meter_state = state["784703"]
+        assert meter_state["consumption"] == 1.42
+        assert "reactive_import_inductive" not in meter_state
+        assert "reactive_export_capacitive" not in meter_state
 
     @pytest.mark.asyncio
     async def test_partial_failure_logs_warning(self, caplog) -> None:
@@ -942,7 +972,7 @@ class TestTab17DateFallback:
         assert len(tab17_calls) == 1  # No fallback needed
 
         state = mqtt.publish_state.call_args[0][0]
-        assert state["register_consumption"] == 12345.67
+        assert state.get("784703", {})["register_consumption"] == 12345.67
 
     @pytest.mark.asyncio
     async def test_tab17_today_no_data_fetches_yesterday(self) -> None:
@@ -956,7 +986,7 @@ class TestTab17DateFallback:
 
         async def fetch_with_tab17_fallback(cookies: Any, **kwargs: Any) -> dict:
             nonlocal call_count_1027
-            assembly_id = kwargs.get("assembly_id")
+            assembly_id = kwargs.get("assembly_id", 0)
             if assembly_id == -1027:
                 call_count_1027 += 1
                 if call_count_1027 == 1:
@@ -977,7 +1007,7 @@ class TestTab17DateFallback:
 
         assert call_count_1027 == 2  # Today + yesterday
         state = mqtt.publish_state.call_args[0][0]
-        assert state["register_consumption"] == 12345.67
+        assert state.get("784703", {})["register_consumption"] == 12345.67
 
     @pytest.mark.asyncio
     async def test_tab17_both_days_no_data_excludes_register_keys(self) -> None:
@@ -987,7 +1017,7 @@ class TestTab17DateFallback:
         config = _make_config()
 
         async def fetch_tab17_always_empty(cookies: Any, **kwargs: Any) -> dict:
-            assembly_id = kwargs.get("assembly_id")
+            assembly_id = kwargs.get("assembly_id", 0)
             if assembly_id == -1027:
                 return _make_register_payload(has_data=False)
             return _ASSEMBLY_PAYLOADS.get(
@@ -1004,10 +1034,11 @@ class TestTab17DateFallback:
         await orch.run_once()
 
         state = mqtt.publish_state.call_args[0][0]
-        assert "register_consumption" not in state
-        assert "register_production" not in state
-        assert "register_low_tariff" not in state
-        assert "register_high_tariff" not in state
+        meter_state = state.get("784703", {})
+        assert "register_consumption" not in meter_state
+        assert "register_production" not in meter_state
+        assert "register_low_tariff" not in meter_state
+        assert "register_high_tariff" not in meter_state
 
     @pytest.mark.asyncio
     async def test_tab17_fallback_uses_shifted_dates(self) -> None:
@@ -1019,7 +1050,7 @@ class TestTab17DateFallback:
         captured_dates: list[dict] = []
 
         async def capture_dates(cookies: Any, **kwargs: Any) -> dict:
-            assembly_id = kwargs.get("assembly_id")
+            assembly_id = kwargs.get("assembly_id", 0)
             if assembly_id == -1027:
                 captured_dates.append(
                     {
@@ -1071,7 +1102,7 @@ class TestSessionExpiryMidMultiFetch:
         async def fetch_expires_on_second(cookies: Any, **kwargs: Any) -> dict:
             nonlocal call_count, expired_once
             call_count += 1
-            assembly_id = kwargs.get("assembly_id")
+            assembly_id = kwargs.get("assembly_id", 0)
             if call_count == 2 and not expired_once:
                 expired_once = True
                 raise SessionExpiredError("Session expired mid-fetch")
@@ -1090,7 +1121,10 @@ class TestSessionExpiryMidMultiFetch:
 
         mqtt.publish_state.assert_called_once()
         state = mqtt.publish_state.call_args[0][0]
-        assert "consumption" in state
+        # State should be per-electrometer format: {electrometer_id: {sensor_key: value}}
+        assert "784703" in state
+        meter_state = state["784703"]
+        assert "consumption" in meter_state
 
 
 # ===========================================================================
@@ -1117,7 +1151,9 @@ class TestHdoIntegration:
         auth = FakeAuthClient()
         fetcher = MultiAssemblyFetcher()
         mqtt = FakeMqttPublisher()
-        config = _make_config(ean="859182400100000001")
+        config = _make_config(
+            electrometers=[{"electrometer_id": "784703", "ean": "859182400100000001"}]
+        )
 
         hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
 
@@ -1140,7 +1176,9 @@ class TestHdoIntegration:
         auth = FakeAuthClient()
         fetcher = MultiAssemblyFetcher()
         mqtt = FakeMqttPublisher()
-        config = _make_config(ean="859182400100000001")
+        config = _make_config(
+            electrometers=[{"electrometer_id": "784703", "ean": "859182400100000001"}]
+        )
 
         hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
 
@@ -1184,7 +1222,9 @@ class TestHdoIntegration:
         auth = FakeAuthClient()
         fetcher = MultiAssemblyFetcher()
         mqtt = FakeMqttPublisher()
-        config = _make_config(ean="859182400100000001")
+        config = _make_config(
+            electrometers=[{"electrometer_id": "784703", "ean": "859182400100000001"}]
+        )
 
         hdo_fetcher = AsyncMock(side_effect=RuntimeError("DIP timeout"))
 
@@ -1206,7 +1246,9 @@ class TestHdoIntegration:
         auth = FakeAuthClient()
         fetcher = MultiAssemblyFetcher()
         mqtt = FakeMqttPublisher()
-        config = _make_config(ean="859182400100000001")
+        config = _make_config(
+            electrometers=[{"electrometer_id": "784703", "ean": "859182400100000001"}]
+        )
 
         hdo_fetcher = AsyncMock(side_effect=RuntimeError("DIP timeout"))
 
@@ -1230,7 +1272,9 @@ class TestHdoIntegration:
             fail_on={-1003, -1012, -1011, -1021, -1022, -1027}
         )
         mqtt = FakeMqttPublisher()
-        config = _make_config(ean="859182400100000001")
+        config = _make_config(
+            electrometers=[{"electrometer_id": "784703", "ean": "859182400100000001"}]
+        )
 
         hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
 

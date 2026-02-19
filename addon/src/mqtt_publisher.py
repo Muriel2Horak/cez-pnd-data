@@ -3,10 +3,19 @@
 Publishes Home Assistant MQTT Discovery payloads and sensor state values
 for consumption (+A), production (-A), and reactive (Rv) power readings.
 
+Identity strategy (clean-break, multi-electrometer safe):
+  unique_id   : cez_pnd_{electrometer_id}_{sensor_key}
+  device_id   : cez_pnd_{electrometer_id}
+  device_name : CEZ PND {electrometer_id}
+
 Topic scheme (deterministic, no ad-hoc per run):
-  Config : homeassistant/sensor/cez_pnd_{meter_id}/{key}/config
-  State  : cez_pnd/{meter_id}/{key}/state
-  Avail  : cez_pnd/{meter_id}/availability
+  Config : homeassistant/sensor/cez_pnd_{electrometer_id}/{key}/config
+  State  : cez_pnd/{electrometer_id}/{key}/state
+  Avail  : cez_pnd/{electrometer_id}/availability
+
+Each electrometer_id produces a distinct HA device with collision-free
+entity IDs and topics.  EAN context is available via the ``configuration_url``
+device metadata field when the caller supplies an ``ean`` value.
 """
 
 from __future__ import annotations
@@ -22,9 +31,9 @@ logger = logging.getLogger(__name__)
 
 # ── Topic templates ───────────────────────────────────────────────────
 
-CONFIG_TOPIC_TEMPLATE = "homeassistant/sensor/cez_pnd_{meter_id}/{key}/config"
-STATE_TOPIC_TEMPLATE = "cez_pnd/{meter_id}/{key}/state"
-AVAILABILITY_TOPIC_TEMPLATE = "cez_pnd/{meter_id}/availability"
+CONFIG_TOPIC_TEMPLATE = "homeassistant/sensor/cez_pnd_{electrometer_id}/{key}/config"
+STATE_TOPIC_TEMPLATE = "cez_pnd/{electrometer_id}/{key}/state"
+AVAILABILITY_TOPIC_TEMPLATE = "cez_pnd/{electrometer_id}/availability"
 
 
 # ── Sensor definitions ────────────────────────────────────────────────
@@ -45,21 +54,21 @@ class SensorDefinition:
 _SENSOR_DEFINITIONS: list[SensorDefinition] = [
     SensorDefinition(
         key="consumption",
-        name="CEZ Consumption Power",
+        name="CEZ {id} Consumption Power / Odběr",
         unit_of_measurement="kW",
         device_class="power",
         icon="mdi:flash",
     ),
     SensorDefinition(
         key="production",
-        name="CEZ Production Power",
+        name="CEZ {id} Production Power / Dodávka",
         unit_of_measurement="kW",
         device_class="power",
         icon="mdi:solar-power",
     ),
     SensorDefinition(
         key="reactive",
-        name="CEZ Reactive Power",
+        name="CEZ {id} Reactive Power / Jalový výkon",
         unit_of_measurement="kW",
         device_class="reactive_power",
         icon="mdi:sine-wave",
@@ -67,28 +76,28 @@ _SENSOR_DEFINITIONS: list[SensorDefinition] = [
     # New reactive power sensors (from Tab 03/04, 15-min, var)
     SensorDefinition(
         key="reactive_import_inductive",
-        name="CEZ Reactive Import Ri+",
+        name="CEZ {id} Reactive Import Ri+ / Import induktivní",
         unit_of_measurement="var",
         device_class="reactive_power",
         icon="mdi:sine-wave",
     ),
     SensorDefinition(
         key="reactive_export_capacitive",
-        name="CEZ Reactive Export Rc-",
+        name="CEZ {id} Reactive Export Rc- / Export kapacitivní",
         unit_of_measurement="var",
         device_class="reactive_power",
         icon="mdi:sine-wave",
     ),
     SensorDefinition(
         key="reactive_export_inductive",
-        name="CEZ Reactive Export Ri-",
+        name="CEZ {id} Reactive Export Ri- / Export induktivní",
         unit_of_measurement="var",
         device_class="reactive_power",
         icon="mdi:sine-wave",
     ),
     SensorDefinition(
         key="reactive_import_capacitive",
-        name="CEZ Reactive Import Rc+",
+        name="CEZ {id} Reactive Import Rc+ / Import kapacitivní",
         unit_of_measurement="var",
         device_class="reactive_power",
         icon="mdi:sine-wave",
@@ -96,7 +105,7 @@ _SENSOR_DEFINITIONS: list[SensorDefinition] = [
     # Daily energy aggregates (from Tab 07/08, daily, kWh)
     SensorDefinition(
         key="daily_consumption",
-        name="CEZ Daily Consumption",
+        name="CEZ {id} Daily Consumption / Denní odběr",
         unit_of_measurement="kWh",
         device_class="energy",
         state_class="total_increasing",
@@ -104,7 +113,7 @@ _SENSOR_DEFINITIONS: list[SensorDefinition] = [
     ),
     SensorDefinition(
         key="daily_production",
-        name="CEZ Daily Production",
+        name="CEZ {id} Daily Production / Denní dodávka",
         unit_of_measurement="kWh",
         device_class="energy",
         state_class="total_increasing",
@@ -113,7 +122,7 @@ _SENSOR_DEFINITIONS: list[SensorDefinition] = [
     # Register readings (from Tab 17, daily, kWh)
     SensorDefinition(
         key="register_consumption",
-        name="CEZ Register Consumption (+E)",
+        name="CEZ {id} Register Consumption (+E) / Registr odběr",
         unit_of_measurement="kWh",
         device_class="energy",
         state_class="total_increasing",
@@ -121,7 +130,7 @@ _SENSOR_DEFINITIONS: list[SensorDefinition] = [
     ),
     SensorDefinition(
         key="register_production",
-        name="CEZ Register Production (-E)",
+        name="CEZ {id} Register Production (-E) / Registr dodávka",
         unit_of_measurement="kWh",
         device_class="energy",
         state_class="total_increasing",
@@ -129,7 +138,7 @@ _SENSOR_DEFINITIONS: list[SensorDefinition] = [
     ),
     SensorDefinition(
         key="register_low_tariff",
-        name="CEZ Register Low Tariff (NT)",
+        name="CEZ {id} Register Low Tariff (NT) / Registr nízký tarif",
         unit_of_measurement="kWh",
         device_class="energy",
         state_class="total_increasing",
@@ -137,7 +146,7 @@ _SENSOR_DEFINITIONS: list[SensorDefinition] = [
     ),
     SensorDefinition(
         key="register_high_tariff",
-        name="CEZ Register High Tariff (VT)",
+        name="CEZ {id} Register High Tariff (VT) / Registr vysoký tarif",
         unit_of_measurement="kWh",
         device_class="energy",
         state_class="total_increasing",
@@ -171,28 +180,28 @@ class BinarySensorDefinition:
 _HDO_SENSOR_DEFINITIONS: list[SensorDefinition] = [
     SensorDefinition(
         key="hdo_low_tariff_active",
-        name="CEZ HDO Low Tariff Active",
+        name="CEZ {id} HDO Low Tariff Active / HDO Nízký tarif aktivní",
         unit_of_measurement=None,
         device_class="binary_sensor",
         state_class=None,
     ),
     SensorDefinition(
         key="hdo_next_switch",
-        name="CEZ HDO Next Switch",
+        name="CEZ {id} HDO Next Switch / HDO Další přepnutí",
         unit_of_measurement=None,
         device_class="timestamp",
         state_class=None,
     ),
     SensorDefinition(
         key="hdo_schedule_today",
-        name="CEZ HDO Schedule Today",
+        name="CEZ {id} HDO Schedule Today / HDO Rozvrh dnes",
         unit_of_measurement=None,
         device_class=None,
         state_class=None,
     ),
     SensorDefinition(
         key="hdo_signal",
-        name="CEZ HDO Signal",
+        name="CEZ {id} HDO Signal / HDO Signál",
         unit_of_measurement=None,
         device_class=None,
         state_class=None,
@@ -213,28 +222,49 @@ VALID_HDO_KEYS = frozenset(d.key for d in _HDO_SENSOR_DEFINITIONS)
 
 def build_discovery_payload(
     sensor: SensorDefinition,
-    meter_id: str,
+    electrometer_id: str,
+    *,
+    ean: str = "",
 ) -> dict[str, Any]:
     """Build an HA-compliant MQTT Discovery payload for a single sensor.
 
+    Args:
+        sensor: Sensor definition to build the payload for.
+        electrometer_id: Electrometer ID used in unique_id, device_id, and topics.
+        ean: Optional EAN (supply-point number).  When provided, a
+            ``configuration_url`` pointing to the CEZ PND portal is added
+            to the device metadata so that the EAN context is accessible
+            from the Home Assistant device page.
+
     Reference: https://www.home-assistant.io/integrations/sensor.mqtt/
     """
-    device_id = f"cez_pnd_{meter_id}"
+    device_id = f"cez_pnd_{electrometer_id}"
+
+    device_meta: dict[str, Any] = {
+        "identifiers": [device_id],
+        "name": f"CEZ PND {electrometer_id}",
+        "manufacturer": "CEZ Distribuce",
+        "model": "PND Electrometer",
+    }
+
+    if ean:
+        device_meta["configuration_url"] = (
+            f"https://pnd.cezdistribuce.cz/cezpnd2/dashboard/?ean={ean}"
+        )
 
     payload: dict[str, Any] = {
         "unique_id": f"{device_id}_{sensor.key}",
-        "name": sensor.name,
-        "state_topic": STATE_TOPIC_TEMPLATE.format(meter_id=meter_id, key=sensor.key),
-        "availability_topic": AVAILABILITY_TOPIC_TEMPLATE.format(meter_id=meter_id),
+        "name": sensor.name.format(id=electrometer_id),
+        "state_topic": STATE_TOPIC_TEMPLATE.format(
+            electrometer_id=electrometer_id, key=sensor.key
+        ),
+        "availability_topic": AVAILABILITY_TOPIC_TEMPLATE.format(
+            electrometer_id=electrometer_id
+        ),
         "unit_of_measurement": sensor.unit_of_measurement,
         "device_class": sensor.device_class,
         "state_class": sensor.state_class,
-        "device": {
-            "identifiers": [device_id],
-            "name": f"CEZ PND {meter_id}",
-            "manufacturer": "CEZ Distribuce",
-            "model": "PND Electrometer",
-        },
+        "device": device_meta,
     }
 
     if sensor.icon:
@@ -249,20 +279,45 @@ VALID_SENSOR_KEYS = frozenset(d.key for d in _SENSOR_DEFINITIONS)
 
 
 class MqttPublisher:
-    """Manages MQTT lifecycle: LWT, discovery, and state publishing."""
+    """Multi-electrometer MQTT publisher for HA Discovery and state."""
 
-    def __init__(self, client: Any, meter_id: str) -> None:
+    def __init__(
+        self,
+        client: Any,
+        electrometers: list[dict[str, str]] | None = None,
+        *,
+        electrometer_id: str | None = None,
+        ean: str = "",
+    ) -> None:
         self._client = client
-        self._meter_id = meter_id
-        self._availability_topic = AVAILABILITY_TOPIC_TEMPLATE.format(meter_id=meter_id)
+
+        if electrometers is not None:
+            self._electrometers = list(electrometers)
+        elif electrometer_id is not None:
+            entry: dict[str, str] = {"electrometer_id": electrometer_id}
+            if ean:
+                entry["ean"] = ean
+            self._electrometers = [entry]
+        else:
+            raise TypeError(
+                "MqttPublisher requires either 'electrometers' list "
+                "or legacy 'electrometer_id' keyword argument"
+            )
+
+    # ── helpers ───────────────────────────────────────────────────
+
+    def _availability_topic(self, meter_id: str) -> str:
+        return AVAILABILITY_TOPIC_TEMPLATE.format(electrometer_id=meter_id)
 
     # ── Lifecycle ─────────────────────────────────────────────────
 
     def start(self) -> None:
-        """Configure LWT, connect, and announce online status."""
-        # LWT must be set BEFORE connect
+        """Configure LWT (first meter only — MQTT limitation), connect,
+        and announce online for every electrometer.
+        """
+        first_meter = self._electrometers[0]["electrometer_id"]
         self._client.will_set(
-            self._availability_topic,
+            self._availability_topic(first_meter),
             payload="offline",
             qos=1,
             retain=True,
@@ -270,55 +325,78 @@ class MqttPublisher:
 
         self._client.connect()
 
-        # Announce online
-        self._client.publish(
-            self._availability_topic,
-            payload="online",
-            qos=1,
-            retain=True,
+        for elec in self._electrometers:
+            meter_id = elec["electrometer_id"]
+            self._client.publish(
+                self._availability_topic(meter_id),
+                payload="online",
+                qos=1,
+                retain=True,
+            )
+        logger.info(
+            "MQTT publisher started, %d electrometer(s) online",
+            len(self._electrometers),
         )
-        logger.info("MQTT publisher started, availability=online")
 
     def stop(self) -> None:
-        """Publish offline availability and disconnect."""
-        self._client.publish(
-            self._availability_topic,
-            payload="offline",
-            qos=1,
-            retain=True,
-        )
+        """Publish offline availability for all meters and disconnect."""
+        for elec in self._electrometers:
+            meter_id = elec["electrometer_id"]
+            self._client.publish(
+                self._availability_topic(meter_id),
+                payload="offline",
+                qos=1,
+                retain=True,
+            )
         self._client.disconnect()
         logger.info("MQTT publisher stopped, availability=offline")
 
     # ── Discovery ─────────────────────────────────────────────────
 
     def publish_discovery(self) -> None:
-        """Publish MQTT Discovery config for all sensor entities."""
-        for sensor in _SENSOR_DEFINITIONS:
-            topic = CONFIG_TOPIC_TEMPLATE.format(
-                meter_id=self._meter_id, key=sensor.key
-            )
-            payload = build_discovery_payload(sensor, self._meter_id)
-            self._client.publish(
-                topic,
-                payload=json.dumps(payload),
-                qos=1,
-                retain=True,
-            )
-            logger.debug("Published discovery: %s", topic)
+        """Publish MQTT Discovery config for all sensor entities of every electrometer."""
+        for elec in self._electrometers:
+            meter_id = elec["electrometer_id"]
+            meter_ean = elec.get("ean", "")
+            for sensor in _SENSOR_DEFINITIONS:
+                topic = CONFIG_TOPIC_TEMPLATE.format(
+                    electrometer_id=meter_id, key=sensor.key
+                )
+                payload = build_discovery_payload(sensor, meter_id, ean=meter_ean)
+                self._client.publish(
+                    topic,
+                    payload=json.dumps(payload),
+                    qos=1,
+                    retain=True,
+                )
+                logger.debug("Published discovery: %s", topic)
 
         self.publish_hdo_discovery()
 
     # ── State publishing ──────────────────────────────────────────
 
-    def publish_state(self, readings: Mapping[str, float | None]) -> None:
-        """Publish current sensor values to state topics.
-
-        Args:
-            readings: Mapping of sensor key -> numeric value.
-                      Keys not in VALID_SENSOR_KEYS are silently ignored.
-                      None values are skipped (sensor stays at last known state).
+    def publish_state(
+        self,
+        readings: Mapping[str, Any],
+    ) -> None:
+        """Publish sensor values.  Accepts flat ``{key: val}`` (legacy) or
+        per-meter ``{meter_id: {key: val}}`` format.
         """
+        known_ids = {e["electrometer_id"] for e in self._electrometers}
+        is_per_meter = any(k in known_ids for k in readings)
+
+        if is_per_meter:
+            for elec in self._electrometers:
+                meter_id = elec["electrometer_id"]
+                meter_readings = readings.get(meter_id, {})
+                self._publish_readings_for_meter(meter_id, meter_readings)
+        else:
+            first_meter = self._electrometers[0]["electrometer_id"]
+            self._publish_readings_for_meter(first_meter, readings)
+
+    def _publish_readings_for_meter(
+        self, meter_id: str, readings: Mapping[str, float | None]
+    ) -> None:
         for key, value in readings.items():
             if key not in VALID_SENSOR_KEYS:
                 logger.warning("Ignoring unknown sensor key: %s", key)
@@ -326,7 +404,7 @@ class MqttPublisher:
             if value is None:
                 continue
 
-            topic = STATE_TOPIC_TEMPLATE.format(meter_id=self._meter_id, key=key)
+            topic = STATE_TOPIC_TEMPLATE.format(electrometer_id=meter_id, key=key)
             self._client.publish(
                 topic,
                 payload=str(value),
@@ -335,8 +413,11 @@ class MqttPublisher:
             )
             logger.debug("Published state: %s = %s", topic, value)
 
-    def publish_hdo_state(self, hdo_data: Any) -> None:
-        """Publish HDO tariff data to 4 dedicated sensor state topics."""
+    def publish_hdo_state(
+        self, hdo_data: Any, *, electrometer_id: str | None = None
+    ) -> None:
+        meter_id = electrometer_id or self._electrometers[0]["electrometer_id"]
+
         schedule_str = "; ".join(f"{s}-{e}" for s, e in hdo_data.today_schedule)
         hdo_values: dict[str, str] = {
             "hdo_low_tariff_active": "ON" if hdo_data.is_low_tariff else "OFF",
@@ -349,7 +430,7 @@ class MqttPublisher:
             if key not in VALID_HDO_KEYS:
                 continue
             topic = STATE_TOPIC_TEMPLATE.format(
-                meter_id=self._meter_id,
+                electrometer_id=meter_id,
                 key=key,
             )
             self._client.publish(
@@ -361,17 +442,20 @@ class MqttPublisher:
             logger.debug("Published HDO state: %s = %s", topic, value)
 
     def publish_hdo_discovery(self) -> None:
-        """Publish MQTT Discovery config for all 4 HDO sensor entities."""
-        for sensor in _HDO_SENSOR_DEFINITIONS:
-            topic = CONFIG_TOPIC_TEMPLATE.format(
-                meter_id=self._meter_id,
-                key=sensor.key,
-            )
-            payload = build_discovery_payload(sensor, self._meter_id)
-            self._client.publish(
-                topic,
-                payload=json.dumps(payload),
-                qos=1,
-                retain=True,
-            )
-            logger.debug("Published HDO discovery: %s", topic)
+        """Publish MQTT Discovery config for all 4 HDO sensor entities of every electrometer."""
+        for elec in self._electrometers:
+            meter_id = elec["electrometer_id"]
+            meter_ean = elec.get("ean", "")
+            for sensor in _HDO_SENSOR_DEFINITIONS:
+                topic = CONFIG_TOPIC_TEMPLATE.format(
+                    electrometer_id=meter_id,
+                    key=sensor.key,
+                )
+                payload = build_discovery_payload(sensor, meter_id, ean=meter_ean)
+                self._client.publish(
+                    topic,
+                    payload=json.dumps(payload),
+                    qos=1,
+                    retain=True,
+                )
+                logger.debug("Published HDO discovery: %s", topic)

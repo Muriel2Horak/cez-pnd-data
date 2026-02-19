@@ -19,8 +19,7 @@ class PndClient:
     PND_API_URL = "https://pnd.cezdistribuce.cz/cezpnd2/external/data"
     DEFAULT_TIMEOUT = 30
 
-    def __init__(self, electrometer_id: str, session: aiohttp.ClientSession) -> None:
-        self._electrometer_id = electrometer_id
+    def __init__(self, session: aiohttp.ClientSession) -> None:
         self._session = session
 
     async def fetch_data(
@@ -30,6 +29,7 @@ class PndClient:
         assembly_id: int,
         date_from: str,
         date_to: str,
+        electrometer_id: str,
     ) -> dict[str, Any]:
         payload = {
             "format": "table",
@@ -39,7 +39,7 @@ class PndClient:
             "intervalTo": date_to,
             "compareFrom": None,
             "opmId": None,
-            "electrometerId": self._electrometer_id,
+            "electrometerId": electrometer_id,
         }
         headers = {
             "Cookie": playwright_cookies_to_header(cookies),

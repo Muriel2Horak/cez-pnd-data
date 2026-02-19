@@ -82,7 +82,7 @@ class TestInvalidCredentials:
         mock_mqtt.connect = MagicMock()
         mock_mqtt.disconnect = MagicMock()
 
-        publisher = MqttPublisher(client=mock_mqtt, meter_id="test_meter")
+        publisher = MqttPublisher(client=mock_mqtt, electrometer_id="test_meter")
         publisher.start()
 
         # Simulate orchestrator: auth fails, so no data is fetched
@@ -210,7 +210,7 @@ class TestStaleSessionProtection:
         mock_mqtt.connect = MagicMock()
         mock_mqtt.disconnect = MagicMock()
 
-        publisher = MqttPublisher(client=mock_mqtt, meter_id="test_meter")
+        publisher = MqttPublisher(client=mock_mqtt, electrometer_id="test_meter")
         publisher.start()
 
         # Auth fails on re-auth

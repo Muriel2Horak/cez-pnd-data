@@ -14,7 +14,7 @@ from addon.src.pnd_client import PndClient, PndFetchError
 async def test_fetch_data_builds_correct_payload():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     # Create mock response
     mock_response = AsyncMock()
@@ -34,6 +34,7 @@ async def test_fetch_data_builds_correct_payload():
         assembly_id=-1003,
         date_from="16.02.2026 00:00",
         date_to="16.02.2026 00:00",
+        electrometer_id="784703",
     )
 
     call_kwargs = session.post.call_args.kwargs
@@ -50,7 +51,7 @@ async def test_fetch_data_builds_correct_payload():
 async def test_fetch_data_sends_post_to_correct_url():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     mock_response = AsyncMock()
     mock_response.status = 200
@@ -67,6 +68,7 @@ async def test_fetch_data_sends_post_to_correct_url():
         assembly_id=-1003,
         date_from="16.02.2026 00:00",
         date_to="16.02.2026 00:00",
+        electrometer_id="784703",
     )
 
     session.post.assert_called_once()
@@ -81,7 +83,7 @@ async def test_fetch_data_converts_playwright_cookies():
         {"name": "test", "value": "456"},
     ]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     mock_response = AsyncMock()
     mock_response.status = 200
@@ -98,6 +100,7 @@ async def test_fetch_data_converts_playwright_cookies():
         assembly_id=-1003,
         date_from="16.02.2026 00:00",
         date_to="16.02.2026 00:00",
+        electrometer_id="784703",
     )
 
     call_kwargs = session.post.call_args.kwargs
@@ -109,7 +112,7 @@ async def test_fetch_data_converts_playwright_cookies():
 async def test_fetch_data_returns_json_response():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     expected = {"hasData": True, "columns": [], "values": []}
     mock_response = AsyncMock()
@@ -127,6 +130,7 @@ async def test_fetch_data_returns_json_response():
         assembly_id=-1003,
         date_from="16.02.2026 00:00",
         date_to="16.02.2026 00:00",
+        electrometer_id="784703",
     )
     assert result == expected
 
@@ -135,7 +139,7 @@ async def test_fetch_data_returns_json_response():
 async def test_fetch_data_raises_session_expired_on_401():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     mock_response = AsyncMock()
     mock_response.status = 401
@@ -152,6 +156,7 @@ async def test_fetch_data_raises_session_expired_on_401():
             assembly_id=-1003,
             date_from="16.02.2026 00:00",
             date_to="16.02.2026 00:00",
+            electrometer_id="784703",
         )
 
 
@@ -159,7 +164,7 @@ async def test_fetch_data_raises_session_expired_on_401():
 async def test_fetch_data_raises_on_non_200():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     mock_response = AsyncMock()
     mock_response.status = 500
@@ -176,6 +181,7 @@ async def test_fetch_data_raises_on_non_200():
             assembly_id=-1003,
             date_from="16.02.2026 00:00",
             date_to="16.02.2026 00:00",
+            electrometer_id="784703",
         )
 
 
@@ -183,7 +189,7 @@ async def test_fetch_data_raises_on_non_200():
 async def test_fetch_data_raises_on_timeout():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     # Create context manager that raises timeout on enter
     mock_post_cm = Mock()
@@ -198,6 +204,7 @@ async def test_fetch_data_raises_on_timeout():
             assembly_id=-1003,
             date_from="16.02.2026 00:00",
             date_to="16.02.2026 00:00",
+            electrometer_id="784703",
         )
 
 
@@ -205,7 +212,7 @@ async def test_fetch_data_raises_on_timeout():
 async def test_fetch_data_raises_on_connection_error():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     # Create context manager that raises connection error on enter
     mock_post_cm = Mock()
@@ -222,6 +229,7 @@ async def test_fetch_data_raises_on_connection_error():
             assembly_id=-1003,
             date_from="16.02.2026 00:00",
             date_to="16.02.2026 00:00",
+            electrometer_id="784703",
         )
 
 
@@ -229,7 +237,7 @@ async def test_fetch_data_raises_on_connection_error():
 async def test_fetch_data_raises_on_invalid_json():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     mock_response = AsyncMock()
     mock_response.status = 200
@@ -247,20 +255,22 @@ async def test_fetch_data_raises_on_invalid_json():
             assembly_id=-1003,
             date_from="16.02.2026 00:00",
             date_to="16.02.2026 00:00",
+            electrometer_id="784703",
         )
 
 
 def test_constructor_stores_electrometer_id():
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
-    assert client._electrometer_id == "784703"
+    client = PndClient(session=session)
+    # PndClient no longer stores electrometer_id, it's passed to fetch_data
+    assert hasattr(client, "_session")
 
 
 @pytest.mark.asyncio
-async def test_fetch_data_uses_stored_electrometer_id():
+async def test_fetch_data_uses_passed_electrometer_id():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="123456", session=session)
+    client = PndClient(session=session)
 
     mock_response = AsyncMock()
     mock_response.status = 200
@@ -277,18 +287,19 @@ async def test_fetch_data_uses_stored_electrometer_id():
         assembly_id=-1003,
         date_from="16.02.2026 00:00",
         date_to="16.02.2026 00:00",
+        electrometer_id="784703",
     )
 
     call_kwargs = session.post.call_args.kwargs
     payload = call_kwargs["json"]
-    assert payload["electrometerId"] == "123456"
+    assert payload["electrometerId"] == "784703"
 
 
 @pytest.mark.asyncio
 async def test_fetch_data_handles_has_data_false():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     expected = {"hasData": False, "columns": [], "values": []}
     mock_response = AsyncMock()
@@ -306,6 +317,7 @@ async def test_fetch_data_handles_has_data_false():
         assembly_id=-1003,
         date_from="16.02.2026 00:00",
         date_to="16.02.2026 00:00",
+        electrometer_id="784703",
     )
     assert result == expected
 
@@ -314,7 +326,7 @@ async def test_fetch_data_handles_has_data_false():
 async def test_fetch_data_passes_assembly_id_kwarg():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     mock_response = AsyncMock()
     mock_response.status = 200
@@ -331,6 +343,7 @@ async def test_fetch_data_passes_assembly_id_kwarg():
         assembly_id=-1003,
         date_from="16.02.2026 00:00",
         date_to="16.02.2026 00:00",
+        electrometer_id="784703",
     )
 
     call_kwargs = session.post.call_args.kwargs
@@ -342,7 +355,7 @@ async def test_fetch_data_passes_assembly_id_kwarg():
 async def test_fetch_data_passes_date_from_kwargs():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     mock_response = AsyncMock()
     mock_response.status = 200
@@ -359,6 +372,7 @@ async def test_fetch_data_passes_date_from_kwargs():
         assembly_id=-1003,
         date_from="16.02.2026 00:00",
         date_to="16.02.2026 00:00",
+        electrometer_id="784703",
     )
 
     call_kwargs = session.post.call_args.kwargs
@@ -370,7 +384,7 @@ async def test_fetch_data_passes_date_from_kwargs():
 async def test_fetch_data_passes_date_to_kwargs():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     mock_response = AsyncMock()
     mock_response.status = 200
@@ -387,6 +401,7 @@ async def test_fetch_data_passes_date_to_kwargs():
         assembly_id=-1003,
         date_from="16.02.2026 00:00",
         date_to="16.02.2026 23:59",
+        electrometer_id="784703",
     )
 
     call_kwargs = session.post.call_args.kwargs
@@ -398,7 +413,7 @@ async def test_fetch_data_passes_date_to_kwargs():
 async def test_content_type_is_application_json():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     mock_response = AsyncMock()
     mock_response.status = 200
@@ -415,6 +430,7 @@ async def test_content_type_is_application_json():
         assembly_id=-1003,
         date_from="16.02.2026 00:00",
         date_to="16.02.2026 00:00",
+        electrometer_id="784703",
     )
 
     call_kwargs = session.post.call_args.kwargs
@@ -426,7 +442,7 @@ async def test_content_type_is_application_json():
 async def test_uses_chrome_user_agent():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     mock_response = AsyncMock()
     mock_response.status = 200
@@ -443,6 +459,7 @@ async def test_uses_chrome_user_agent():
         assembly_id=-1003,
         date_from="16.02.2026 00:00",
         date_to="16.02.2026 00:00",
+        electrometer_id="784703",
     )
 
     call_kwargs = session.post.call_args.kwargs
@@ -454,7 +471,7 @@ async def test_uses_chrome_user_agent():
 async def test_uses_injected_session():
     cookies = [{"name": "test", "value": "123"}]
     session = AsyncMock()
-    client = PndClient(electrometer_id="784703", session=session)
+    client = PndClient(session=session)
 
     mock_response = AsyncMock()
     mock_response.status = 200
@@ -471,6 +488,7 @@ async def test_uses_injected_session():
         assembly_id=-1003,
         date_from="16.02.2026 00:00",
         date_to="16.02.2026 00:00",
+        electrometer_id="784703",
     )
 
     # Verify injected session was used
