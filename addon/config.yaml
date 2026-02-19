@@ -1,5 +1,5 @@
 name: CEZ PND
-version: "0.1.0"
+version: "0.1.1"
 slug: cez-pnd
 description: "CEZ PND data integration for Home Assistant via MQTT Discovery"
 arch:
