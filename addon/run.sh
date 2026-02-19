@@ -91,6 +91,7 @@ PY
 
 echo "Starting CEZ PND add-on..."
 echo "Configuration loaded. Sensitive details are not printed to logs."
+echo "MQTT configuration is read from Supervisor-provided environment (mqtt:need)."
 
 wait_for_mqtt
 
