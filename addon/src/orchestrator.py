@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable
 
+from .auth import ServiceMaintenanceError
+from .dip_client import DipMaintenanceError
 from .hdo_parser import parse_hdo_signals
 from .parser import CezDataParser
 
@@ -43,6 +45,7 @@ SESSION_EXPIRED_ERROR = "SESSION_EXPIRED_ERROR"
 NO_DATA_WARNING = "NO_DATA_AVAILABLE"
 FETCH_ERROR = "ASSEMBLY_FETCH_ERROR"
 HDO_FETCH_ERROR = "HDO_FETCH_ERROR"
+DIP_MAINTENANCE = "DIP_MAINTENANCE"
 
 
 class SessionExpiredError(Exception):
@@ -126,11 +129,13 @@ class Orchestrator:
     async def run_once(self) -> None:
         """Execute a single fetch-parse-publish cycle."""
         cycle_start = datetime.now()
-        meter_id = self._config.meter_id
         num_electrometers = len(self._config.electrometers)
 
         try:
             session = await self._auth.ensure_session()
+        except ServiceMaintenanceError as e:
+            logger.warning("[%s] %s — skipping cycle", DIP_MAINTENANCE, e)
+            return
         except Exception as e:
             logger.error(
                 "[%s] Auth failure — cannot obtain session: %s — skipping cycle",
@@ -142,37 +147,38 @@ class Orchestrator:
 
         cookies = session.cookies
 
-        all_assembly_data = await self._fetch_all_assemblies(cookies, meter_id)
-
-        if all_assembly_data:
-            state: dict[str, dict[str, Any]] = {}
-            for assembly_name, assembly_payload in all_assembly_data.items():
+        state: dict[str, dict[str, Any]] = {}
+        for electrometer in self._config.electrometers:
+            meter_id = electrometer.get("electrometer_id", "unknown")
+            all_assembly_data = await self._fetch_all_assemblies(cookies, meter_id)
+            if not all_assembly_data:
+                continue
+            for _, assembly_payload in all_assembly_data.items():
                 parser = CezDataParser(assembly_payload)
                 reading = parser.get_latest_reading_dict()
-                if reading:
-                    electrometer_id = (
-                        reading.get("electrometer_id") or self._config.meter_id
-                    )
-                    if electrometer_id not in state:
-                        state[electrometer_id] = {}
-                    for parser_key, value in reading.items():
-                        if parser_key == "electrometer_id":
-                            continue
-                        sensor_key = _PARSER_KEY_TO_SENSOR_KEY.get(parser_key)
-                        if sensor_key is not None and value is not None:
-                            state[electrometer_id][sensor_key] = value
+                if not reading:
+                    continue
+                reading_meter_id = reading.get("electrometer_id") or meter_id
+                if reading_meter_id not in state:
+                    state[reading_meter_id] = {}
+                for parser_key, value in reading.items():
+                    if parser_key == "electrometer_id":
+                        continue
+                    sensor_key = _PARSER_KEY_TO_SENSOR_KEY.get(parser_key)
+                    if sensor_key is not None and value is not None:
+                        state[reading_meter_id][sensor_key] = value
 
-            if state:
-                try:
-                    self._mqtt.publish_state(state)
-                    logger.debug("Published state for meter %s", self._config.meter_id)
-                except Exception:
-                    logger.error(
-                        "[%s] MQTT publish failed — broker may be unavailable",
-                        MQTT_PUBLISH_ERROR,
-                    )
-            else:
-                logger.info("No data available in CEZ response, skipping PND publish")
+        if state:
+            try:
+                self._mqtt.publish_state(state)
+                logger.debug("Published state for %d meter(s)", len(state))
+            except Exception:
+                logger.error(
+                    "[%s] MQTT publish failed — broker may be unavailable",
+                    MQTT_PUBLISH_ERROR,
+                )
+        else:
+            logger.info("No data available in CEZ response, skipping PND publish")
 
         if self._hdo_fetcher:
             for electrometer in self._config.electrometers:
@@ -184,6 +190,13 @@ class Orchestrator:
                     hdo_raw = await self._hdo_fetcher(cookies, ean)
                     hdo_data = parse_hdo_signals(hdo_raw)
                     self._mqtt.publish_hdo_state(hdo_data, electrometer_id=meter_id)
+                except DipMaintenanceError as e:
+                    logger.warning(
+                        "[%s] %s for meter %s — skipping HDO this cycle",
+                        DIP_MAINTENANCE,
+                        e,
+                        meter_id,
+                    )
                 except Exception as e:
                     logger.error(
                         "[%s] HDO fetch/parse/publish failed for meter %s: %s — PND unaffected",
@@ -202,6 +215,7 @@ class Orchestrator:
     async def _fetch_assembly(
         self,
         cookies: list[dict[str, Any]],
+        meter_id: str,
         assembly_id: int,
         date_from: str,
         date_to: str,
@@ -209,6 +223,7 @@ class Orchestrator:
         """Fetch a single assembly from PND API."""
         payload = await self._fetcher(
             cookies,
+            electrometer_id=meter_id,
             assembly_id=assembly_id,
             date_from=date_from,
             date_to=date_to,
@@ -218,12 +233,19 @@ class Orchestrator:
     async def _fetch_assembly_with_fallback(
         self,
         cookies: list[dict[str, Any]],
+        meter_id: str,
         config: dict[str, Any],
         date_from: str,
         date_to: str,
     ) -> dict[str, Any] | None:
         """Fetch assembly with Tab 17 yesterday fallback."""
-        payload = await self._fetch_assembly(cookies, config["id"], date_from, date_to)
+        payload = await self._fetch_assembly(
+            cookies,
+            meter_id,
+            config["id"],
+            date_from,
+            date_to,
+        )
         if payload is None:
             return None
         if config.get("fallback_yesterday") and not payload.get("hasData", True):
@@ -237,7 +259,7 @@ class Orchestrator:
             yesterday_from = yesterday.strftime("%d.%m.%Y")
             yesterday_to = date_from
             payload = await self._fetch_assembly(
-                cookies, config["id"], yesterday_from, yesterday_to
+                cookies, meter_id, config["id"], yesterday_from, yesterday_to
             )
         return payload
 
@@ -256,6 +278,7 @@ class Orchestrator:
             try:
                 payload = await self._fetch_assembly_with_fallback(
                     cookies,
+                    meter_id,
                     config,
                     date_from,
                     date_to,

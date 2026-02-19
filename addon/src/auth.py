@@ -29,6 +29,10 @@ class AuthSession:
     reused: bool
 
 
+class ServiceMaintenanceError(Exception):
+    """Raised when CEZ/DIP portal is in planned maintenance mode."""
+
+
 class PlaywrightAuthClient:
     def __init__(
         self,
@@ -101,7 +105,15 @@ async def _wait_for_login_success(page: Any) -> None:
     success_pattern = re.compile(
         r".*/(cezpnd2/dashboard/|cezpnd2/external/dashboard/view|irj/portal).*"
     )
-    await page.wait_for_url(success_pattern, timeout=120_000)
+    try:
+        await page.wait_for_url(success_pattern, timeout=120_000)
+    except Exception as exc:
+        content = (await page.content()).lower()
+        if "odstávka" in content and "právě probíhá odstávka systému" in content:
+            raise ServiceMaintenanceError(
+                "DIP/PND portal is in maintenance window"
+            ) from exc
+        raise
 
 
 async def _get_login_target(page: Any) -> Any:

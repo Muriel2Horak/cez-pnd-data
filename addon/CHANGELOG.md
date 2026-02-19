@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6
+
+- Fix PND assembly fetch calls by always passing required `electrometer_id`.
+- Improve multi-electrometer polling by fetching assemblies per configured meter.
+- Detect DIP maintenance mode and log as maintenance warning instead of generic auth/fetch failures.
+
 ## 0.1.5
 
 - Add detailed logging for Playwright authentication to diagnose login failures.
