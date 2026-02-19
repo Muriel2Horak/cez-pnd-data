@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3
+
+- Fix Python module import error by running as `python3 -m src.main` instead of direct file execution.
+- Add local testing script (`scripts/test-local.sh`) for pre-deploy verification.
+
 ## 0.1.2
 
 - Fix startup reliability by ensuring `bash` is installed in the add-on image.
