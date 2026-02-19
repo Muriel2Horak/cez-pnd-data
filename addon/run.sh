@@ -5,6 +5,12 @@ set -euo pipefail
 # HA Supervisor CEZ PND Add-on Startup Script
 OPTIONS_FILE="/data/options.json"
 
+if [[ -e "$OPTIONS_FILE" && ! -r "$OPTIONS_FILE" ]]; then
+    echo "Error: Cannot read $OPTIONS_FILE (permission denied)." >&2
+    echo "Please restart add-on with corrected permissions or reinstall the add-on." >&2
+    exit 1
+fi
+
 read_option() {
     local key="$1"
     local default_value="${2:-}"
