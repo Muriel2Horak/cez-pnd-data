@@ -7,6 +7,7 @@ LABEL maintainer="Martin Horak <martin@example.com>"
 
 # Install required system packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
     gcc \
     libffi-dev \
     libssl-dev \
@@ -54,8 +55,7 @@ WORKDIR /app
 # Set permissions
 RUN chown -R hass:hass /app
 
-# Switch to non-root user
-USER hass
+USER root
 
 # Set the entrypoint
 CMD ["/run.sh"]
