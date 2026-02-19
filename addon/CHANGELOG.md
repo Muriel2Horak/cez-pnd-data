@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.4
+
+- **CRITICAL FIX**: Orchestrator now actually runs! Previously was created but never started.
+- Fix immediate shutdown after startup by calling `orchestrator.run_loop()`.
+
 ## 0.1.3
 
 - Fix Python module import error by running as `python3 -m src.main` instead of direct file execution.

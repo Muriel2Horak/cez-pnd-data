@@ -338,7 +338,7 @@ async def main():
             hdo_fetcher=hdo_fetcher,
         )
 
-        return orchestrator
+        await orchestrator.run_loop()
 
     # Set up signal handlers for graceful shutdown
     _ = asyncio.get_running_loop()
