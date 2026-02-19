@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
@@ -9,6 +10,8 @@ from .session_manager import (
     CredentialsProvider,
     SessionStore,
 )
+
+logger = logging.getLogger(__name__)
 
 PND_BASE_URL = "https://pnd.cezdistribuce.cz/cezpnd2"
 PORTAL_URL = "https://dip.cezdistribuce.cz/irj/portal?zpnd"
@@ -55,6 +58,7 @@ class PlaywrightAuthClient:
             async_playwright,
         )
 
+        logger.info("Starting Playwright login for %s", credentials.email)
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=True)
             context = await browser.new_context(
@@ -65,25 +69,31 @@ class PlaywrightAuthClient:
             )
             page = await context.new_page()
 
+            logger.debug("Navigating to %s", PND_BASE_URL)
             await page.goto(PND_BASE_URL, wait_until="domcontentloaded")
             try:
                 await page.wait_for_selector('input[name="username"]', timeout=30_000)
             except Exception:
+                logger.debug("Username not found, trying portal URL %s", PORTAL_URL)
                 await page.goto(PORTAL_URL, wait_until="domcontentloaded")
                 await page.wait_for_selector('input[name="username"]', timeout=120_000)
 
             login_target = await _get_login_target(page)
+            logger.debug("Filling login form")
             await login_target.fill('input[name="username"]', credentials.email)
             await login_target.fill('input[name="password"]', credentials.password)
             submit_locator = login_target.locator(
                 'input[type="submit"], button[type="submit"]'
             ).first
             await submit_locator.wait_for(timeout=120_000)
+            logger.info("Submitting login form")
             await submit_locator.click()
 
+            logger.debug("Waiting for login success")
             await _wait_for_login_success(page)
             cookies = await context.cookies()
             await browser.close()
+            logger.info("Login successful, got %d cookies", len(cookies))
             return [dict(c) for c in cookies]
 
 
