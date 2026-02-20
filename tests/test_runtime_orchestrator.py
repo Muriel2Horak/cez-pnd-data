@@ -26,7 +26,6 @@ from addon.src.orchestrator import (
     ASSEMBLY_CONFIGS,
     CEZ_FETCH_ERROR,
     HDO_FETCH_ERROR,
-    HDO_TOKEN_ERROR,
     MQTT_PUBLISH_ERROR,
     SESSION_EXPIRED,
     Orchestrator,

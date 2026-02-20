@@ -1,9 +1,9 @@
-from __future__ import annotations
-
 """Main entry point for CEZ PND Home Assistant Add-on.
 
 Reads configuration from environment variables and starts the orchestrator.
 """
+
+from __future__ import annotations
 
 import asyncio
 import json
