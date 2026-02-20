@@ -17,11 +17,19 @@ import paho.mqtt.client as mqtt_client
 from .auth import PlaywrightAuthClient
 from .dip_client import DipClient
 from .mqtt_publisher import MqttPublisher
-from .orchestrator import Orchestrator, OrchestratorConfig
+from .orchestrator import Orchestrator, OrchestratorConfig, SessionExpiredError
 from .pnd_client import PndClient
 from .session_manager import CredentialsProvider, SessionStore
 
 PND_DATA_URL = "https://pnd.cezdistribuce.cz/cezpnd2/external/data"
+
+
+class PndFetchError(Exception):
+    """Raised when PND data fetch fails (non-200 response, network error, etc.)."""
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 # Configure logging
 logging.basicConfig(
@@ -100,6 +108,17 @@ class PndFetcher:
                     PND_DATA_URL,
                     data=payload,
                 )
+
+                if response.status == 302:
+                    raise SessionExpiredError(
+                        "PND fetch redirected (302) - session expired"
+                    )
+                if response.status != 200:
+                    raise PndFetchError(
+                        f"PND fetch failed with status {response.status}",
+                        status_code=response.status,
+                    )
+
                 data: Dict[str, Any] = await response.json()
                 logger.debug(
                     "PND fetch assembly=%d status=%d hasData=%s",

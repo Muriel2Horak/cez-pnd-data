@@ -35,6 +35,18 @@ class DipClient:
     def __init__(self, session: aiohttp.ClientSession) -> None:
         self._session = session
 
+    @staticmethod
+    def _is_html_content_type(content_type: str | None) -> bool:
+        """Check if Content-Type header indicates HTML response.
+
+        Args:
+            content_type: Value of Content-Type header (may be None)
+
+        Returns:
+            True if content type indicates HTML (maintenance page), False otherwise
+        """
+        return content_type is not None and "text/html" in content_type.lower()
+
     async def fetch_hdo(
         self, cookies: list[dict[str, Any]], ean: str
     ) -> dict[str, Any]:
@@ -61,6 +73,11 @@ class DipClient:
                     raise DipTokenError(
                         f"Token request failed: HTTP {token_resp.status}"
                     )
+                content_type = token_resp.headers.get("Content-Type", "")
+                if self._is_html_content_type(content_type):
+                    raise DipMaintenanceError(
+                        "Token endpoint returned HTML (maintenance page)"
+                    )
                 token_data = await token_resp.json()
                 if "token" not in token_data:
                     raise DipTokenError("Token missing from response")
@@ -80,6 +97,11 @@ class DipClient:
                 if signals_resp.status != 200:
                     raise DipFetchError(
                         f"Signals request failed: HTTP {signals_resp.status}"
+                    )
+                content_type = signals_resp.headers.get("Content-Type", "")
+                if self._is_html_content_type(content_type):
+                    raise DipMaintenanceError(
+                        "Signals endpoint returned HTML (maintenance page)"
                     )
                 data = await signals_resp.json()
                 if "data" not in data:

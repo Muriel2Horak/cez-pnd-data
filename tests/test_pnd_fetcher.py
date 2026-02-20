@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from addon.src.main import PND_DATA_URL, PndFetcher, build_pnd_payload
+from addon.src.main import PND_DATA_URL, PndFetchError, PndFetcher, build_pnd_payload
+from addon.src.orchestrator import SessionExpiredError
 
 SAMPLE_COOKIES: list[dict[str, Any]] = [
     {
@@ -242,3 +243,65 @@ class TestPndFetcher:
 
         sent_payload = mock_context.request.post.call_args[1]["data"]
         assert sent_payload["electrometerId"] is None
+
+    @pytest.mark.asyncio
+    async def test_302_redirect_raises_session_expired_error(self) -> None:
+        mock_pw, mock_browser, mock_context = _build_playwright_mocks(status=302)
+
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_pw
+        ):
+            fetcher = PndFetcher()
+            with pytest.raises(SessionExpiredError) as exc_info:
+                await fetcher.fetch(
+                    SAMPLE_COOKIES,
+                    assembly_id=-1003,
+                    date_from="14.02.2026 00:00",
+                    date_to="14.02.2026 00:00",
+                )
+
+        assert "302" in str(exc_info.value)
+        assert "session expired" in str(exc_info.value).lower()
+        mock_context.close.assert_called_once()
+        mock_browser.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_500_error_raises_pnd_fetch_error(self) -> None:
+        mock_pw, mock_browser, mock_context = _build_playwright_mocks(status=500)
+
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_pw
+        ):
+            fetcher = PndFetcher()
+            with pytest.raises(PndFetchError) as exc_info:
+                await fetcher.fetch(
+                    SAMPLE_COOKIES,
+                    assembly_id=-1003,
+                    date_from="14.02.2026 00:00",
+                    date_to="14.02.2026 00:00",
+                )
+
+        assert exc_info.value.status_code == 500
+        assert "500" in str(exc_info.value)
+        mock_context.close.assert_called_once()
+        mock_browser.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_403_error_raises_pnd_fetch_error(self) -> None:
+        mock_pw, mock_browser, mock_context = _build_playwright_mocks(status=403)
+
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_pw
+        ):
+            fetcher = PndFetcher()
+            with pytest.raises(PndFetchError) as exc_info:
+                await fetcher.fetch(
+                    SAMPLE_COOKIES,
+                    assembly_id=-1003,
+                    date_from="14.02.2026 00:00",
+                    date_to="14.02.2026 00:00",
+                )
+
+        assert exc_info.value.status_code == 403
+        mock_context.close.assert_called_once()
+        mock_browser.close.assert_called_once()
