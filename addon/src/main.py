@@ -18,7 +18,6 @@ from .auth import PlaywrightAuthClient
 from .dip_client import DipClient
 from .mqtt_publisher import MqttPublisher
 from .orchestrator import Orchestrator, OrchestratorConfig, SessionExpiredError
-from .pnd_client import PndClient
 from .session_manager import CredentialsProvider, SessionStore
 
 PND_DATA_URL = "https://pnd.cezdistribuce.cz/cezpnd2/external/data"
@@ -73,6 +72,7 @@ class PndFetcher:
         assembly_id: int,
         date_from: str,
         date_to: str,
+        electrometer_id: str | None = None,
     ) -> Dict[str, Any]:
         async_playwright = _get_async_playwright()
         async with async_playwright() as pw:
@@ -80,11 +80,12 @@ class PndFetcher:
             context = await browser.new_context()
             try:
                 await context.add_cookies(cookies)
+                effective_electrometer_id = electrometer_id or self._electrometer_id
                 payload = build_pnd_payload(
                     assembly_id,
                     date_from,
                     date_to,
-                    self._electrometer_id,
+                    effective_electrometer_id,
                 )
                 # WAF warmup: Send JSON request first (will fail with 400, but sets WAF cookies/state)
                 logger.debug("WAF warmup (JSON request)...")
@@ -316,7 +317,6 @@ async def main():
     api_session = None
 
     # API clients (will be created inside async context)
-    pnd_client = None
     dip_client = None
 
     # These will be replaced inside the async with block
@@ -337,13 +337,12 @@ async def main():
 
     # Run orchestrator inside async context with shared aiohttp session
     async def run_orchestrator_with_session():
-        nonlocal api_session, pnd_client, dip_client, pnd_fetcher, hdo_fetcher
+        nonlocal api_session, dip_client, pnd_fetcher, hdo_fetcher
 
         # API clients and fetchers
         api_session = aiohttp.ClientSession()
-        pnd_client = PndClient(session=api_session)
         dip_client = DipClient(session=api_session)
-        pnd_fetcher = pnd_client.fetch_data
+        pnd_fetcher = PndFetcher().fetch
         has_hdo_ean = any(
             isinstance(e, dict) and e.get("ean")
             for e in config["cez"].get("electrometers", [])
