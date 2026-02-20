@@ -205,7 +205,8 @@ async def test_fetch_hdo_raises_maintenance_on_html_signals_response():
     context = _mock_context(token_resp, signals_resp)
 
     with pytest.raises(
-        DipMaintenanceError, match=r"Signals endpoint returned HTML \(maintenance page\)"
+        DipMaintenanceError,
+        match=r"Signals endpoint returned HTML \(maintenance page\)",
     ):
         await DipClient().fetch_hdo(context, ean="123")
 
@@ -327,7 +328,9 @@ async def test_playwright_hdo_fetcher_returns_dip_result():
 
 @pytest.mark.asyncio
 async def test_playwright_hdo_fetcher_adds_cookies_to_context():
-    cookies = [{"name": "JSESSIONID", "value": "sess", "domain": ".cez.cz", "path": "/"}]
+    cookies = [
+        {"name": "JSESSIONID", "value": "sess", "domain": ".cez.cz", "path": "/"}
+    ]
     mock_async_pw, mock_browser, mock_context, _ = _build_hdo_playwright_mocks({})
 
     with (
