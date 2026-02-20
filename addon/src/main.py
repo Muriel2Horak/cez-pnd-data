@@ -13,7 +13,6 @@ import signal
 import sys
 from typing import Any, Dict, List, Optional
 
-import aiohttp
 import paho.mqtt.client as mqtt_client
 
 from .auth import DEFAULT_USER_AGENT, PND_BASE_URL, PlaywrightAuthClient
@@ -325,6 +324,39 @@ class PndFetcher:
         return data
 
 
+class PlaywrightHdoFetcher:
+    def __init__(self) -> None:
+        self._pw_cm: Any = None
+        self._browser: Any = None
+
+    async def _ensure_browser(self) -> None:
+        if self._browser is not None:
+            return
+        async_playwright = _get_async_playwright()
+        self._pw_cm = async_playwright()
+        pw = await self._pw_cm.__aenter__()
+        self._browser = await pw.chromium.launch(headless=True)
+
+    async def close(self) -> None:
+        if self._browser is not None:
+            await self._browser.close()
+            self._browser = None
+        if self._pw_cm is not None:
+            await self._pw_cm.__aexit__(None, None, None)
+            self._pw_cm = None
+
+    async def fetch(self, cookies: list, ean: str) -> dict:
+        await self._ensure_browser()
+        context = None
+        try:
+            context = await PndFetcher._create_browser_context(self._browser)
+            await context.add_cookies(cookies)
+            return await DipClient().fetch_hdo(context, ean)
+        finally:
+            if context is not None:
+                await context.close()
+
+
 class MQTTClientWrapper:
     """Wrapper for paho.mqtt.client to match expected interface."""
 
@@ -505,15 +537,10 @@ async def main():
         credentials_provider=credentials_provider, session_store=session_store
     )
 
-    # Create shared aiohttp.ClientSession for all API calls
-    api_session = None
-
-    # API clients (will be created inside async context)
-    dip_client = None
-
     # These will be replaced inside the async with block
     pnd_fetcher = None
     hdo_fetcher = None
+    hdo_fetcher_instance: Optional[PlaywrightHdoFetcher] = None
 
     mqtt_publisher = MqttPublisher(
         mqtt_client,
@@ -527,19 +554,16 @@ async def main():
         poll_interval_seconds=900,  # 15 minutes
     )
 
-    # Run orchestrator inside async context with shared aiohttp session
     async def run_orchestrator_with_session():
-        nonlocal api_session, dip_client, pnd_fetcher, hdo_fetcher
+        nonlocal pnd_fetcher, hdo_fetcher, hdo_fetcher_instance
 
-        # API clients and fetchers
-        api_session = aiohttp.ClientSession()
-        dip_client = DipClient(session=api_session)
         pnd_fetcher = PndFetcher().fetch
         has_hdo_ean = any(
             isinstance(e, dict) and e.get("ean")
             for e in config["cez"].get("electrometers", [])
         )
-        hdo_fetcher = dip_client.fetch_hdo if has_hdo_ean else None
+        hdo_fetcher_instance = PlaywrightHdoFetcher() if has_hdo_ean else None
+        hdo_fetcher = hdo_fetcher_instance.fetch if hdo_fetcher_instance else None
 
         orchestrator = Orchestrator(
             config=orchestrator_config,
@@ -572,6 +596,8 @@ async def main():
     finally:
         # Clean shutdown
         logger.info("Shutting down...")
+        if hdo_fetcher_instance is not None:
+            await hdo_fetcher_instance.close()
         mqtt_publisher.stop()
 
 
