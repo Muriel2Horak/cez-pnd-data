@@ -281,7 +281,7 @@ class Orchestrator:
         results = {}
         today = datetime.now()
         date_from = today.strftime("%d.%m.%Y 00:00")
-        date_to = today.strftime("%d.%m.%Y 00:00")
+        date_to = today.strftime("%d.%m.%Y 23:59")
 
         for config in ASSEMBLY_CONFIGS:
             try:
