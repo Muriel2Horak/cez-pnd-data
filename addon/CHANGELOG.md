@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.2.0
+
+- **BREAKING: Playwright-only PND Runtime Migration** - Removed HTTP PND client path entirely; PND data now fetched exclusively via Playwright browser automation with WAF warmup flow.
+- Harden Playwright fetch contract with explicit error handling:
+  - Add `PndFetchError` exception for non-200 responses from PND API.
+  - Detect 302 redirects as expired sessions (raises `SessionExpiredError`).
+- Detect DIP maintenance mode:
+  - Detect HTML content-type responses from DIP API (indicates maintenance page).
+  - Add `DipMaintenanceError` for 400/503 responses from DIP endpoints.
+- Wire production runtime to Playwright-only fetch:
+  - All PND assembly fetches now use `PndFetcher` with WAF warmup + form-encoded POST.
+  - HTTP/aiohttp `PndClient` class removed entirely (18 HTTP path tests deleted).
+- Enhance orchestrator outage handling with new log markers:
+  - Rename `SESSION_EXPIRED_ERROR` → `SESSION_EXPIRED`.
+  - Add `PORTAL_MAINTENANCE` for CEZ portal-wide outages (login page as maintenance).
+  - Add `DIP_MAINTENANCE` for DIP API endpoint outages (400/503 or HTML responses).
+  - Add `HDO_TOKEN_ERROR` for DIP token fetch failures.
+- Outage-safe cycle behavior:
+  - `PORTAL_MAINTENANCE` skips entire polling cycle (PND + HDO).
+  - `DIP_MAINTENANCE` / `HDO_TOKEN_ERROR` / `HDO_FETCH_ERROR` skip only HDO data, PND continues.
+  - `SESSION_EXPIRED` (WARNING) triggers auto-reauth and retry, cycle continues.
+  - `SESSION_EXPIRED` (ERROR) aborts current cycle, next cycle will retry.
+
 ## 0.1.6
 
 - Fix PND assembly fetch calls by always passing required `electrometer_id`.
