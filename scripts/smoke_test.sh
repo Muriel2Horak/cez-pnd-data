@@ -190,7 +190,37 @@ else
 fi
 
 # =============================================================================
-header "Step 8: README validation"
+# Step 8: Validate Playwright-only runtime path
+# =============================================================================
+
+# Verify HTTP PND client has been removed (Playwright-only migration T8)
+if grep -r "pnd_client\|PndClient" "${PROJECT_DIR}/addon/src" 2>/dev/null | grep -v "^$"; then
+    fail "HTTP PND client still referenced in production code"
+else
+    pass "Playwright-only runtime path verified (HTTP PND client removed)"
+fi
+
+# Verify Playwright fetcher exists and is imported
+if grep -q "PndFetcher\|playwright" "${PROJECT_DIR}/addon/src/main.py"; then
+    pass "Playwright fetcher is used in main.py runtime"
+else
+    fail "Playwright fetcher not found in main.py runtime"
+fi
+
+# =============================================================================
+# Step 9: Validate maintenance scenario coverage
+# =============================================================================
+
+# Check that maintenance tests exist in test suite
+MAINTENANCE_TEST_COUNT=$(python3 -m pytest tests/test_dip_client.py tests/test_runtime_orchestrator.py --collect-only -q 2>/dev/null | grep -i "mainten\|session_expired" | wc -l)
+if [[ "${MAINTENANCE_TEST_COUNT}" -ge 5 ]]; then
+    pass "Maintenance scenario tests present (${MAINTENANCE_TEST_COUNT} tests found)"
+else
+    fail "Insufficient maintenance scenario tests (${MAINTENANCE_TEST_COUNT} tests found, expected >= 5)"
+fi
+
+# =============================================================================
+# Step 10: README validation
 # =============================================================================
 
 README="${PROJECT_DIR}/README.md"

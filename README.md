@@ -144,13 +144,14 @@ ean: "85912345678901"
 6. **Session TTL** — 6 hodin (konfigurovatelné), expiry z cookie `expires` nebo TTL fallback
 7. **Auto-reauth** — při expiraci orchestrátor automaticky opakuje login
 
-### Data flow (WAF warmup + form POST)
+### Data flow (Playwright-only PND fetch)
 
 CEZ PND API vyžaduje specifický přístup kvůli WAF (Web Application Firewall):
+**PND data se fetchují POUZE přes Playwright (browser automation)** — HTTP/aiohttp cesta byla odstraněna.
 
 ```
 1. WAF warmup request (JSON, očekávaný 400)
-   POST /cezpnd2/external/data
+   POST /cezpnd2/external/data (Playwright browser)
    Content-Type: application/json
    Body: {"format":"table","idAssembly":-1003,...}
    → Status 400 (expected — sets WAF cookies/state)
@@ -158,15 +159,15 @@ CEZ PND API vyžaduje specifický přístup kvůli WAF (Web Application Firewall
 2. Pauza 1 sekunda
 
 3. Skutečný data request (form-encoded)
-   POST /cezpnd2/external/data
+   POST /cezpnd2/external/data (Playwright browser)
    Content-Type: application/x-www-form-urlencoded   ← KRITICKÉ
    Body: format=table&idAssembly=-1003&...
    → Status 200 + JSON data
 ```
 
-> **Proč ne aiohttp?** PndClient (aiohttp) dostává 302 OAuth redirect místo dat.
-> Pouze Playwright browser context (s cookies ze stejného kontextu) funguje.
-> Toto je **context affinity** — cookies + WAF state jsou vázány na browser context.
+> **Proč jen Playwright?** CEZ PND API má context affinity — cookies a WAF state jsou
+> vázány na browser context. HTTP clienty (aiohttp) dostávají 302 OAuth redirect místo dat.
+> Pouze Playwright browser context (s cookies ze stejné session) může získat PND data.
 
 ### 6 Assembly konfigurací
 
@@ -205,15 +206,17 @@ HDO signály se fetchují přes **DIP API** (ne PND):
 
 | Symptom | Příčina | Log marker | Řešení |
 |---------|---------|------------|--------|
-| `302 Redirect` místo dat | Expirované cookies / chybí browser context | — | Restart add-onu → auto-reauth |
+| `302 Redirect` místo dat | Expirované cookies / chybí browser context | `SESSION_EXPIRED` | Auto-reauth, případně restart |
 | `400 Bad Request` z PND API | Chybný Content-Type (JSON místo form) | — | Interní chyba — viz WAF warmup flow |
 | HTML místo JSON odpovědi | WAF warmup selhal | — | Restart → warmup se opakuje |
 | `hasData=false` pro všechny assembly | Žádná data pro dnešek | `NO_DATA_AVAILABLE` | Zkontrolujte PND portál ručně |
 | `Login failed` | Špatné přihlašovací údaje | — | Ověřte email/heslo na portálu |
+| CEZ portál údržba | Portál-wide výpadek (login stránka jako údržba) | `PORTAL_MAINTENANCE` | Čekejte na obnovení CEZ portálu |
 | `Timeout waiting for selector` | DIP portál pomalý/nedostupný | — | Retry, portál může mít údržbu |
 | `MQTT connection refused` | Broker neběží | `MQTT_PUBLISH_ERROR` | Zkontrolujte Mosquitto add-on |
-| Data se neaktualizují | Session expirovala | `SESSION_EXPIRED_ERROR` | Auto-reauth, případně restart |
-| HDO senzory chybí | Chybí EAN v konfiguraci | `HDO_FETCH_ERROR` | Nastavte `ean` v konfiguraci |
+| DIP endpoint údržba | DIP API dočasně nedostupný (400/503 nebo HTML) | `DIP_MAINTENANCE` | HDO data se přeskočí, PND běží dál |
+| HDO token selhal | Nepodařilo se získat token z DIP API | `HDO_TOKEN_ERROR` | HDO data se přeskočí, PND běží dál |
+| HDO fetch selhal | Chyba při získávání HDO signálů | `HDO_FETCH_ERROR` | HDO data se přeskočí, PND běží dál |
 
 ### Chyba přihlášení
 
@@ -259,8 +262,9 @@ HDO signály se fetchují přes **DIP API** (ne PND):
 
 **Řešení:**
 - Add-on automaticky detekuje expirované sessions a provede re-autentizaci
-- Pokud re-auth selže, v logu se objeví chybová zpráva `[SESSION_EXPIRED_ERROR]`
+- Pokud re-auth selže, v logu se objeví zpráva `[SESSION_EXPIRED]` (WARNING) nebo `[SESSION_EXPIRED]` (ERROR při selhání)
 - Session cookies jsou uloženy v `/data/session_state.json` s TTL 6 hodin
+- PND fetch path používá POUZE Playwright browser automation (HTTP cesta odstraněna)
 
 ### Žádná data / prázdný payload
 
@@ -284,14 +288,16 @@ HDO signály se fetchují přes **DIP API** (ne PND):
 ### Polling cyklus (každých 15 minut)
 
 ```
-1. ensure_session()     → load cookies / login pokud expirované
-2. fetch_all_assemblies → 6× PND API call (WAF warmup + form POST)
+1. ensure_session()     → load cookies / Playwright login pokud expirované
+2. fetch_all_assemblies → 6× PND API call (Playwright WAF warmup + form POST)
 3. CezDataParser        → parse 96 čtvrthodinových záznamů → latest reading
 4. publish_state()      → 13 PND senzorů na MQTT
 5. fetch_hdo()          → DIP API token + signals (pokud EAN nastaven)
 6. publish_hdo_state()  → 4 HDO senzory na MQTT
 7. sleep(900)           → čekání 15 minut
 ```
+
+**Poznámka:** PND data se fetchují POUZE přes Playwright browser automation (původní HTTP cesta byla odstraněna v T8).
 
 ### Session management
 
@@ -314,11 +320,34 @@ HDO signály se fetchují přes **DIP API** (ne PND):
 | `Orchestrator starting` | Add-on startuje, polling loop začíná |
 | `Published discovery` | MQTT Discovery konfigurace odeslána |
 | `Published state` | Senzor hodnoty publikovány |
-| `[SESSION_EXPIRED_ERROR]` | Session expirovala, probíhá re-auth |
+| `[SESSION_EXPIRED]` (WARNING) | Session expirovala, probíhá re-auth (automatické) |
+| `[SESSION_EXPIRED]` (ERROR) | Re-auth selhal, cyklus se přerušuje |
+| `[PORTAL_MAINTENANCE]` | CEZ portál-wide údržba, celý cyklus přeskočen |
+| `[DIP_MAINTENANCE]` | DIP endpoint údržba, HDO přeskočeno, PND běží dál |
+| `[HDO_TOKEN_ERROR]` | DIP token selhal, HDO přeskočeno, PND běží dál |
+| `[HDO_FETCH_ERROR]` | HDO signály selhaly, HDO přeskočeno, PND běží dál |
 | `[CEZ_FETCH_ERROR]` | Fetch z PND API selhal (retry probíhá) |
 | `[MQTT_PUBLISH_ERROR]` | MQTT broker nedostupný |
-| `[HDO_FETCH_ERROR]` | HDO data se nepodařilo získat |
 | `MQTT publisher stopped` | Add-on se vypíná, availability → offline |
+
+### Chování při údržbě a výpadcích
+
+Add-on má inteligentní zpracování různých typů výpadků:
+
+| Marker | Zdroj | Ovlivňuje | Chování |
+|--------|-------|-----------|---------|
+| `SESSION_EXPIRED` (WARNING) | PND session expired (302) | PND | Auto-reauth, retry, pokračuje |
+| `SESSION_EXPIRED` (ERROR) | Re-auth selhal | PND | Cyklus přerušen, příští cyklus zkusí znovu |
+| `PORTAL_MAINTENANCE` | CEZ portál login page jako údržba | VŠE | Celý cyklus přeskočen (PND + HDO) |
+| `DIP_MAINTENANCE` | DIP endpoint 400/503 nebo HTML | Pouze HDO | HDO přeskočeno, PND data běží dál |
+| `HDO_TOKEN_ERROR` | DIP token endpoint selhal | Pouze HDO | HDO přeskočeno, PND data běží dál |
+| `HDO_FETCH_ERROR` | HDO signals fetch selhal | Pouze HDO | HDO přeskočeno, PND data běží dál |
+| `ENDPOINT_UNAVAILABLE` | PND/DIP 5xx nebo síťová chyba | PND nebo HDO | Retry nebo abort podle typu |
+
+**Klíčové rozlišení:**
+- `PORTAL_MAINTENANCE` → Znamená, že CEZ portál je DOWN (login údržbem) → nic nefunguje
+- `DIP_MAINTENANCE` → Znamená, že jen DIP endpoint má výpadek → PND data stále fungují
+- `HDO_TOKEN_ERROR` vs `HDO_FETCH_ERROR` → Token selhal vs signals selhaly → stejný výsledek (HDO přeskočeno)
 
 ## Vývoj
 
@@ -341,16 +370,15 @@ addon/
   config.yaml              # HA add-on konfigurace (arch, options, services)
   src/
     __init__.py
-    main.py                # Entry point, PndFetcher (WAF warmup + form POST)
+    main.py                # Entry point, PndFetcher (Playwright WAF warmup + form POST)
     auth.py                # Playwright autentizace (DIP login, iframe, cookies)
     session_manager.py     # Session persistence (6h TTL, /data/session_state.json)
-    orchestrator.py        # Polling loop, 6 assemblies, retry, reauth
+    orchestrator.py        # Polling loop, 6 assemblies, retry, reauth, maintenance handling
     parser.py              # CezDataParser (96 záznamů → latest reading)
-    pnd_client.py          # PndClient (aiohttp) — nefunkční kvůli 302 redirect
     dip_client.py          # DipClient (aiohttp → HDO token + signals)
     mqtt_publisher.py      # MQTT Discovery (17 senzorů) + state publishing
     hdo_parser.py          # HDO signals parser (tarif, schedule, přepnutí)
-    cookie_utils.py        # Playwright cookies → aiohttp header konverze
+    cookie_utils.py        # Playwright cookies → aiohttp header konverze (pro DIP/HDO)
 tests/
     test_auth_session.py        # Auth/session unit testy
     test_cez_parser.py          # Parser testy (96 záznamů, edge cases)
@@ -361,9 +389,8 @@ tests/
     test_invalid_credentials.py # Negativní cesty (invalid auth, stale state)
     test_live_verify_rules.py   # Live verification rules testy
     test_mqtt_discovery.py      # MQTT Discovery payload testy
-    test_pnd_client.py          # PND client testy
-    test_pnd_fetcher.py         # PndFetcher testy (WAF warmup)
-    test_runtime_orchestrator.py # Orchestrator lifecycle testy
+    test_pnd_fetcher.py         # PndFetcher testy (Playwright WAF warmup)
+    test_runtime_orchestrator.py # Orchestrator lifecycle testy (maintenance handling)
 scripts/
     live_verify_flow.py    # Kanonický live verifikační skript
     live_verify_rules.py   # Verifikační pravidla

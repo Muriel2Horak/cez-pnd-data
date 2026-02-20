@@ -8,11 +8,40 @@ from unittest.mock import AsyncMock, Mock
 import aiohttp
 import pytest
 
-from addon.src.dip_client import DipClient, DipFetchError, DipTokenError
+from addon.src.dip_client import (
+    DipClient,
+    DipFetchError,
+    DipMaintenanceError,
+    DipTokenError,
+)
 
 SAMPLE_COOKIES = [
     {"name": "JSESSIONID", "value": "abc123"},
 ]
+
+
+def _mock_response(
+    status: int = 200,
+    json_data: dict | None = None,
+    content_type: str = "application/json",
+) -> AsyncMock:
+    """Create a mock HTTP response with proper headers attribute.
+
+    Args:
+        status: HTTP status code
+        json_data: Data to return from json() method
+        content_type: Content-Type header value
+
+    Returns:
+        AsyncMock with status, headers, and json() method configured
+    """
+    response = AsyncMock()
+    response.status = status
+    response.headers = Mock()
+    response.headers.get = Mock(return_value=content_type)
+    if json_data is not None:
+        response.json = AsyncMock(return_value=json_data)
+    return response
 
 
 @pytest.mark.asyncio
@@ -21,14 +50,10 @@ async def test_fetch_hdo_gets_token_first():
     session = Mock()
 
     # Mock token response
-    mock_token_response = AsyncMock()
-    mock_token_response.status = 200
-    mock_token_response.json = AsyncMock(return_value={"token": "test-token-123"})
+    mock_token_response = _mock_response(json_data={"token": "test-token-123"})
 
     # Mock signals response
-    mock_signals_response = AsyncMock()
-    mock_signals_response.status = 200
-    mock_signals_response.json = AsyncMock(return_value={"data": {"signal": "test"}})
+    mock_signals_response = _mock_response(json_data={"data": {"signal": "test"}})
 
     # Create async context managers for GET requests
     mock_token_cm = Mock()
@@ -62,13 +87,9 @@ async def test_fetch_hdo_uses_token_in_signals_request():
     """Second request has x-request-token header"""
     session = Mock()
 
-    mock_token_response = AsyncMock()
-    mock_token_response.status = 200
-    mock_token_response.json = AsyncMock(return_value={"token": "test-token-456"})
+    mock_token_response = _mock_response(json_data={"token": "test-token-456"})
 
-    mock_signals_response = AsyncMock()
-    mock_signals_response.status = 200
-    mock_signals_response.json = AsyncMock(return_value={"data": {"signal": "test"}})
+    mock_signals_response = _mock_response(json_data={"data": {"signal": "test"}})
 
     mock_token_cm = Mock()
     mock_token_cm.__aenter__ = AsyncMock(return_value=mock_token_response)
@@ -103,13 +124,9 @@ async def test_fetch_hdo_sends_correct_signals_url():
     """URL contains EAN: .../prehled-om?path=supply-point-detail/signals/{ean}"""
     session = Mock()
 
-    mock_token_response = AsyncMock()
-    mock_token_response.status = 200
-    mock_token_response.json = AsyncMock(return_value={"token": "test-token-789"})
+    mock_token_response = _mock_response(json_data={"token": "test-token-789"})
 
-    mock_signals_response = AsyncMock()
-    mock_signals_response.status = 200
-    mock_signals_response.json = AsyncMock(return_value={"data": {"signal": "test"}})
+    mock_signals_response = _mock_response(json_data={"data": {"signal": "test"}})
 
     mock_token_cm = Mock()
     mock_token_cm.__aenter__ = AsyncMock(return_value=mock_token_response)
@@ -139,9 +156,7 @@ async def test_fetch_hdo_converts_playwright_cookies():
     """Uses playwright_cookies_to_header() and sets Cookie header"""
     session = Mock()
 
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_response.json = AsyncMock(return_value={"token": "test"})
+    mock_response = _mock_response(json_data={"token": "test"})
 
     mock_cm = Mock()
     mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
@@ -175,15 +190,11 @@ async def test_fetch_hdo_returns_data_field():
     """Returns data["data"] from response (not full response)"""
     session = Mock()
 
-    mock_token_response = AsyncMock()
-    mock_token_response.status = 200
-    mock_token_response.json = AsyncMock(return_value={"token": "test"})
+    mock_token_response = _mock_response(json_data={"token": "test"})
 
     expected_data = {"signal": "EVV2", "casy": ["08:00-16:00"]}
-    mock_signals_response = AsyncMock()
-    mock_signals_response.status = 200
-    mock_signals_response.json = AsyncMock(
-        return_value={"data": expected_data, "other": "ignored"}
+    mock_signals_response = _mock_response(
+        json_data={"data": expected_data, "other": "ignored"}
     )
 
     mock_token_cm = Mock()
@@ -210,8 +221,7 @@ async def test_fetch_hdo_raises_dip_token_error_on_token_401():
     """Token GET returns 401 -> DipTokenError"""
     session = Mock()
 
-    mock_response = AsyncMock()
-    mock_response.status = 401
+    mock_response = _mock_response(status=401)
 
     mock_cm = Mock()
     mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
@@ -230,9 +240,7 @@ async def test_fetch_hdo_raises_dip_token_error_on_missing_token():
     """Response has no token key -> DipTokenError"""
     session = Mock()
 
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_response.json = AsyncMock(return_value={"other": "data"})
+    mock_response = _mock_response(json_data={"other": "data"})
 
     mock_cm = Mock()
     mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
@@ -251,12 +259,9 @@ async def test_fetch_hdo_raises_dip_fetch_error_on_signals_failure():
     """Signals GET returns 500 -> DipFetchError"""
     session = Mock()
 
-    mock_token_response = AsyncMock()
-    mock_token_response.status = 200
-    mock_token_response.json = AsyncMock(return_value={"token": "test"})
+    mock_token_response = _mock_response(json_data={"token": "test"})
 
-    mock_signals_response = AsyncMock()
-    mock_signals_response.status = 500
+    mock_signals_response = _mock_response(status=500)
 
     mock_token_cm = Mock()
     mock_token_cm.__aenter__ = AsyncMock(return_value=mock_token_response)
@@ -283,13 +288,9 @@ async def test_fetch_hdo_raises_dip_fetch_error_on_missing_data():
     """Response has no data key -> DipFetchError"""
     session = Mock()
 
-    mock_token_response = AsyncMock()
-    mock_token_response.status = 200
-    mock_token_response.json = AsyncMock(return_value={"token": "test"})
+    mock_token_response = _mock_response(json_data={"token": "test"})
 
-    mock_signals_response = AsyncMock()
-    mock_signals_response.status = 200
-    mock_signals_response.json = AsyncMock(return_value={"other": "data"})
+    mock_signals_response = _mock_response(json_data={"other": "data"})
 
     mock_token_cm = Mock()
     mock_token_cm.__aenter__ = AsyncMock(return_value=mock_token_response)
@@ -354,9 +355,7 @@ async def test_fetch_hdo_uses_chrome_user_agent():
 
     session = Mock()
 
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_response.json = AsyncMock(return_value={"token": "test"})
+    mock_response = _mock_response(json_data={"token": "test"})
 
     mock_cm = Mock()
     mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
@@ -388,10 +387,8 @@ async def test_fetch_hdo_uses_injected_session():
     """Uses aiohttp.ClientSession from constructor (no Playwright)"""
     session = Mock()
 
-    mock_response = AsyncMock()
-    mock_response.status = 200
-    mock_response.json = AsyncMock(
-        return_value={"token": "test", "data": {"signal": "test"}}
+    mock_response = _mock_response(
+        json_data={"token": "test", "data": {"signal": "test"}}
     )
 
     mock_cm = Mock()
@@ -419,13 +416,9 @@ async def test_fetch_hdo_preserves_return_format():
         "datum": "16.02.2026",
     }
 
-    mock_token_response = AsyncMock()
-    mock_token_response.status = 200
-    mock_token_response.json = AsyncMock(return_value={"token": "test"})
+    mock_token_response = _mock_response(json_data={"token": "test"})
 
-    mock_signals_response = AsyncMock()
-    mock_signals_response.status = 200
-    mock_signals_response.json = AsyncMock(return_value={"data": expected_data})
+    mock_signals_response = _mock_response(json_data={"data": expected_data})
 
     mock_token_cm = Mock()
     mock_token_cm.__aenter__ = AsyncMock(return_value=mock_token_response)
@@ -444,3 +437,221 @@ async def test_fetch_hdo_preserves_return_format():
     client = DipClient(session=session)
     result = await client.fetch_hdo(SAMPLE_COOKIES, ean="123")
     assert result == expected_data
+
+
+# =============================================================================
+# HTML Content-Type Detection Tests
+# =============================================================================
+
+
+def test_is_html_content_type_detects_html():
+    """_is_html_content_type returns True for text/html content types."""
+    assert DipClient._is_html_content_type("text/html") is True
+    assert DipClient._is_html_content_type("text/html; charset=UTF-8") is True
+    assert DipClient._is_html_content_type("TEXT/HTML") is True
+    assert DipClient._is_html_content_type("application/xhtml+xml") is False
+
+
+def test_is_html_content_type_rejects_json():
+    """_is_html_content_type returns False for JSON content types."""
+    assert DipClient._is_html_content_type("application/json") is False
+    assert DipClient._is_html_content_type("application/json; charset=utf-8") is False
+
+
+def test_is_html_content_type_handles_none():
+    """_is_html_content_type returns False for None."""
+    assert DipClient._is_html_content_type(None) is False
+
+
+@pytest.mark.asyncio
+async def test_fetch_hdo_raises_maintenance_on_html_token_response():
+    """Token endpoint returns HTML (maintenance page) -> DipMaintenanceError."""
+    session = Mock()
+
+    mock_response = _mock_response(status=200, content_type="text/html; charset=UTF-8")
+
+    mock_cm = Mock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+    session.get = Mock(return_value=mock_cm)
+
+    client = DipClient(session=session)
+
+    with pytest.raises(
+        DipMaintenanceError, match="Token endpoint returned HTML \\(maintenance page\\)"
+    ):
+        await client.fetch_hdo(SAMPLE_COOKIES, ean="123")
+
+
+@pytest.mark.asyncio
+async def test_fetch_hdo_raises_maintenance_on_html_signals_response():
+    """Signals endpoint returns HTML (maintenance page) -> DipMaintenanceError."""
+    session = Mock()
+
+    mock_token_response = _mock_response(json_data={"token": "test-token"})
+
+    mock_signals_response = _mock_response(
+        status=200, content_type="text/html; charset=UTF-8"
+    )
+
+    mock_token_cm = Mock()
+    mock_token_cm.__aenter__ = AsyncMock(return_value=mock_token_response)
+    mock_token_cm.__aexit__ = AsyncMock(return_value=None)
+
+    mock_signals_cm = Mock()
+    mock_signals_cm.__aenter__ = AsyncMock(return_value=mock_signals_response)
+    mock_signals_cm.__aexit__ = AsyncMock(return_value=None)
+
+    session.get = Mock(
+        side_effect=lambda url, *args, **kwargs: (
+            mock_token_cm if "token/get" in url else mock_signals_cm
+        )
+    )
+
+    client = DipClient(session=session)
+
+    with pytest.raises(
+        DipMaintenanceError,
+        match="Signals endpoint returned HTML \\(maintenance page\\)",
+    ):
+        await client.fetch_hdo(SAMPLE_COOKIES, ean="123")
+
+
+@pytest.mark.asyncio
+async def test_fetch_hdo_raises_maintenance_on_400_token():
+    """Token endpoint returns HTTP 400 -> DipMaintenanceError."""
+    session = Mock()
+
+    mock_response = _mock_response(status=400)
+
+    mock_cm = Mock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+    session.get = Mock(return_value=mock_cm)
+
+    client = DipClient(session=session)
+
+    with pytest.raises(
+        DipMaintenanceError, match="Token endpoint unavailable \\(HTTP 400\\)"
+    ):
+        await client.fetch_hdo(SAMPLE_COOKIES, ean="123")
+
+
+@pytest.mark.asyncio
+async def test_fetch_hdo_raises_maintenance_on_503_token():
+    """Token endpoint returns HTTP 503 -> DipMaintenanceError."""
+    session = Mock()
+
+    mock_response = _mock_response(status=503)
+
+    mock_cm = Mock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+    session.get = Mock(return_value=mock_cm)
+
+    client = DipClient(session=session)
+
+    with pytest.raises(
+        DipMaintenanceError, match="Token endpoint unavailable \\(HTTP 503\\)"
+    ):
+        await client.fetch_hdo(SAMPLE_COOKIES, ean="123")
+
+
+@pytest.mark.asyncio
+async def test_fetch_hdo_raises_maintenance_on_400_signals():
+    """Signals endpoint returns HTTP 400 -> DipMaintenanceError."""
+    session = Mock()
+
+    mock_token_response = _mock_response(json_data={"token": "test-token"})
+
+    mock_signals_response = _mock_response(status=400)
+
+    mock_token_cm = Mock()
+    mock_token_cm.__aenter__ = AsyncMock(return_value=mock_token_response)
+    mock_token_cm.__aexit__ = AsyncMock(return_value=None)
+
+    mock_signals_cm = Mock()
+    mock_signals_cm.__aenter__ = AsyncMock(return_value=mock_signals_response)
+    mock_signals_cm.__aexit__ = AsyncMock(return_value=None)
+
+    session.get = Mock(
+        side_effect=lambda url, *args, **kwargs: (
+            mock_token_cm if "token/get" in url else mock_signals_cm
+        )
+    )
+
+    client = DipClient(session=session)
+
+    with pytest.raises(
+        DipMaintenanceError, match="Signals endpoint unavailable \\(HTTP 400\\)"
+    ):
+        await client.fetch_hdo(SAMPLE_COOKIES, ean="123")
+
+
+@pytest.mark.asyncio
+async def test_fetch_hdo_raises_maintenance_on_503_signals():
+    """Signals endpoint returns HTTP 503 -> DipMaintenanceError."""
+    session = Mock()
+
+    mock_token_response = _mock_response(json_data={"token": "test-token"})
+
+    mock_signals_response = _mock_response(status=503)
+
+    mock_token_cm = Mock()
+    mock_token_cm.__aenter__ = AsyncMock(return_value=mock_token_response)
+    mock_token_cm.__aexit__ = AsyncMock(return_value=None)
+
+    mock_signals_cm = Mock()
+    mock_signals_cm.__aenter__ = AsyncMock(return_value=mock_signals_response)
+    mock_signals_cm.__aexit__ = AsyncMock(return_value=None)
+
+    session.get = Mock(
+        side_effect=lambda url, *args, **kwargs: (
+            mock_token_cm if "token/get" in url else mock_signals_cm
+        )
+    )
+
+    client = DipClient(session=session)
+
+    with pytest.raises(
+        DipMaintenanceError, match="Signals endpoint unavailable \\(HTTP 503\\)"
+    ):
+        await client.fetch_hdo(SAMPLE_COOKIES, ean="123")
+
+
+@pytest.mark.asyncio
+async def test_fetch_hdo_non_maintenance_error_uses_dip_fetch_error():
+    """Signals endpoint returns HTTP 500 (not maintenance) -> DipFetchError."""
+    session = Mock()
+
+    mock_token_response = _mock_response(json_data={"token": "test-token"})
+
+    mock_signals_response = _mock_response(status=500)
+
+    mock_token_cm = Mock()
+    mock_token_cm.__aenter__ = AsyncMock(return_value=mock_token_response)
+    mock_token_cm.__aexit__ = AsyncMock(return_value=None)
+
+    mock_signals_cm = Mock()
+    mock_signals_cm.__aenter__ = AsyncMock(return_value=mock_signals_response)
+    mock_signals_cm.__aexit__ = AsyncMock(return_value=None)
+
+    session.get = Mock(
+        side_effect=lambda url, *args, **kwargs: (
+            mock_token_cm if "token/get" in url else mock_signals_cm
+        )
+    )
+
+    client = DipClient(session=session)
+
+    with pytest.raises(DipFetchError, match="Signals request failed: HTTP 500"):
+        await client.fetch_hdo(SAMPLE_COOKIES, ean="123")
+
+
+@pytest.mark.asyncio
+async def test_dip_maintenance_error_is_subclass_of_dip_fetch_error():
+    """DipMaintenanceError should be a subclass of DipFetchError."""
+    assert issubclass(DipMaintenanceError, DipFetchError)
