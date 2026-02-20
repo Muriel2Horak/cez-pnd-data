@@ -287,7 +287,7 @@ def test_dip_maintenance_error_is_subclass_of_dip_fetch_error():
     assert issubclass(DipMaintenanceError, DipFetchError)
 
 
-def _build_hdo_playwright_mocks(hdo_result: dict) -> tuple:
+def _build_hdo_playwright_mocks() -> tuple:
     mock_context = AsyncMock()
     mock_context.add_cookies = AsyncMock()
     mock_context.close = AsyncMock()
@@ -302,13 +302,13 @@ def _build_hdo_playwright_mocks(hdo_result: dict) -> tuple:
     mock_async_pw.__aenter__ = AsyncMock(return_value=mock_pw)
     mock_async_pw.__aexit__ = AsyncMock(return_value=False)
 
-    return mock_async_pw, mock_browser, mock_context, hdo_result
+    return mock_async_pw, mock_pw, mock_browser, mock_context
 
 
 @pytest.mark.asyncio
 async def test_playwright_hdo_fetcher_returns_dip_result():
     expected = {"signal": "EVV2", "casy": ["08:00-16:00"]}
-    mock_async_pw, mock_browser, mock_context, _ = _build_hdo_playwright_mocks(expected)
+    mock_async_pw, mock_pw, mock_browser, mock_context = _build_hdo_playwright_mocks()
 
     with (
         patch(
@@ -331,7 +331,7 @@ async def test_playwright_hdo_fetcher_adds_cookies_to_context():
     cookies = [
         {"name": "JSESSIONID", "value": "sess", "domain": ".cez.cz", "path": "/"}
     ]
-    mock_async_pw, mock_browser, mock_context, _ = _build_hdo_playwright_mocks({})
+    mock_async_pw, mock_pw, mock_browser, mock_context = _build_hdo_playwright_mocks()
 
     with (
         patch(
@@ -347,3 +347,79 @@ async def test_playwright_hdo_fetcher_adds_cookies_to_context():
         await PlaywrightHdoFetcher().fetch(cookies=cookies, ean="123")
 
     mock_context.add_cookies.assert_called_once_with(cookies)
+
+
+@pytest.mark.asyncio
+async def test_playwright_hdo_fetcher_reuses_browser_across_calls():
+    mock_async_pw, mock_pw, mock_browser, mock_context = _build_hdo_playwright_mocks()
+
+    with (
+        patch(
+            "addon.src.main._get_async_playwright",
+            return_value=lambda: mock_async_pw,
+        ),
+        patch(
+            "addon.src.main.PndFetcher._create_browser_context",
+            new=AsyncMock(return_value=mock_context),
+        ),
+        patch.object(DipClient, "fetch_hdo", new=AsyncMock(return_value={})),
+    ):
+        fetcher = PlaywrightHdoFetcher()
+        await fetcher.fetch(cookies=[], ean="123")
+        await fetcher.fetch(cookies=[], ean="123")
+
+    mock_pw.chromium.launch.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_playwright_hdo_fetcher_close_shuts_down_browser():
+    mock_async_pw, mock_pw, mock_browser, mock_context = _build_hdo_playwright_mocks()
+
+    with (
+        patch(
+            "addon.src.main._get_async_playwright",
+            return_value=lambda: mock_async_pw,
+        ),
+        patch(
+            "addon.src.main.PndFetcher._create_browser_context",
+            new=AsyncMock(return_value=mock_context),
+        ),
+        patch.object(DipClient, "fetch_hdo", new=AsyncMock(return_value={})),
+    ):
+        fetcher = PlaywrightHdoFetcher()
+        await fetcher.fetch(cookies=[], ean="123")
+        await fetcher.close()
+
+    mock_browser.close.assert_called_once()
+    mock_async_pw.__aexit__.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_playwright_hdo_fetcher_close_is_idempotent():
+    fetcher = PlaywrightHdoFetcher()
+    await fetcher.close()
+    await fetcher.close()
+
+
+@pytest.mark.asyncio
+async def test_playwright_hdo_fetcher_context_closed_on_fetch_error():
+    mock_async_pw, mock_pw, mock_browser, mock_context = _build_hdo_playwright_mocks()
+
+    with (
+        patch(
+            "addon.src.main._get_async_playwright",
+            return_value=lambda: mock_async_pw,
+        ),
+        patch(
+            "addon.src.main.PndFetcher._create_browser_context",
+            new=AsyncMock(return_value=mock_context),
+        ),
+        patch.object(
+            DipClient, "fetch_hdo", new=AsyncMock(side_effect=RuntimeError("fail"))
+        ),
+    ):
+        fetcher = PlaywrightHdoFetcher()
+        with pytest.raises(RuntimeError):
+            await fetcher.fetch(cookies=[], ean="123")
+
+    mock_context.close.assert_called_once()
