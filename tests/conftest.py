@@ -28,6 +28,7 @@ def pnd_json_response() -> AsyncMock:
     """
     response = AsyncMock()
     response.status = 200
+    response.headers = {"content-type": "application/json"}
     response.json = AsyncMock(
         return_value={
             "hasData": True,

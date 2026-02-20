@@ -35,6 +35,7 @@ def _build_playwright_mocks(
 ) -> tuple[AsyncMock, AsyncMock, AsyncMock]:
     response = AsyncMock()
     response.status = status
+    response.headers = {"content-type": "application/json"}
     response.json = AsyncMock(return_value=response_data or SAMPLE_RESPONSE)
 
     mock_context = AsyncMock()
@@ -75,7 +76,7 @@ class TestBuildPndPayload:
 
     def test_none_electrometer_id(self) -> None:
         payload = build_pnd_payload(-1012, "14.02.2026 00:00", "14.02.2026 00:00", None)
-        assert payload["electrometerId"] is None
+        assert payload["electrometerId"] == ""
 
     def test_different_assembly_ids(self) -> None:
         for assembly_id in [-1003, -1012, -1011, -1021, -1022, -1027]:
@@ -242,7 +243,7 @@ class TestPndFetcher:
             )
 
         sent_payload = mock_context.request.post.call_args[1]["data"]
-        assert sent_payload["electrometerId"] is None
+        assert sent_payload["electrometerId"] == ""
 
     @pytest.mark.asyncio
     async def test_302_redirect_raises_session_expired_error(self) -> None:
@@ -305,3 +306,209 @@ class TestPndFetcher:
         assert exc_info.value.status_code == 403
         mock_context.close.assert_called_once()
         mock_browser.close.assert_called_once()
+
+
+class TestFetchOneInContext:
+    """Tests for PndFetcher._fetch_one_in_context (shared-context helper)."""
+
+    def _build_mock_context(
+        self,
+        response_data: dict[str, Any] | None = None,
+        status: int = 200,
+        content_type: str = "application/json",
+    ) -> AsyncMock:
+        response = AsyncMock()
+        response.status = status
+        response.headers = {"content-type": content_type}
+        response.json = AsyncMock(return_value=response_data or SAMPLE_RESPONSE)
+        response.text = AsyncMock(return_value="<html>error</html>")
+
+        mock_context = AsyncMock()
+        mock_context.request.post = AsyncMock(return_value=response)
+        return mock_context
+
+    @pytest.mark.asyncio
+    async def test_returns_json_data(self) -> None:
+        mock_context = self._build_mock_context()
+        fetcher = PndFetcher(electrometer_id="784703")
+
+        result = await fetcher._fetch_one_in_context(
+            mock_context, "784703", -1003, "20.02.2026 00:00", "20.02.2026 23:59"
+        )
+
+        assert result["hasData"] is True
+        mock_context.request.post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_form_payload_normalization(self) -> None:
+        """electrometerId=None must be sent as empty string."""
+        mock_context = self._build_mock_context()
+        fetcher = PndFetcher()
+
+        await fetcher._fetch_one_in_context(
+            mock_context, None, -1003, "20.02.2026 00:00", "20.02.2026 23:59"
+        )
+
+        sent = mock_context.request.post.call_args[1]["data"]
+        assert sent["electrometerId"] == ""
+
+    @pytest.mark.asyncio
+    async def test_302_raises_session_expired(self) -> None:
+        mock_context = self._build_mock_context(status=302)
+        fetcher = PndFetcher()
+
+        with pytest.raises(SessionExpiredError):
+            await fetcher._fetch_one_in_context(
+                mock_context, "784703", -1003, "20.02.2026 00:00", "20.02.2026 23:59"
+            )
+
+    @pytest.mark.asyncio
+    async def test_500_raises_pnd_fetch_error(self) -> None:
+        mock_context = self._build_mock_context(status=500)
+        fetcher = PndFetcher()
+
+        with pytest.raises(PndFetchError) as exc_info:
+            await fetcher._fetch_one_in_context(
+                mock_context, "784703", -1003, "20.02.2026 00:00", "20.02.2026 23:59"
+            )
+
+        assert exc_info.value.status_code == 500
+
+    @pytest.mark.asyncio
+    async def test_non_json_content_type_raises_pnd_fetch_error(self) -> None:
+        mock_context = self._build_mock_context(content_type="text/html; charset=UTF-8")
+        fetcher = PndFetcher()
+
+        with pytest.raises(PndFetchError) as exc_info:
+            await fetcher._fetch_one_in_context(
+                mock_context, "784703", -1003, "20.02.2026 00:00", "20.02.2026 23:59"
+            )
+
+        assert "non-JSON" in str(exc_info.value)
+
+
+class TestFetchAll:
+    """Tests for PndFetcher.fetch_all (single-context batch fetch)."""
+
+    def _build_mocks(
+        self,
+        response_data: dict[str, Any] | None = None,
+    ) -> tuple[AsyncMock, AsyncMock, AsyncMock]:
+        """Build playwright mocks that also support new_page for WAF warmup."""
+        response = AsyncMock()
+        response.status = 200
+        response.headers = {"content-type": "application/json"}
+        response.json = AsyncMock(return_value=response_data or SAMPLE_RESPONSE)
+
+        mock_page = AsyncMock()
+        mock_page.goto = AsyncMock()
+        mock_page.close = AsyncMock()
+
+        mock_context = AsyncMock()
+        mock_context.add_cookies = AsyncMock()
+        mock_context.close = AsyncMock()
+        mock_context.new_page = AsyncMock(return_value=mock_page)
+        mock_context.request.post = AsyncMock(return_value=response)
+
+        mock_browser = AsyncMock()
+        mock_browser.new_context = AsyncMock(return_value=mock_context)
+        mock_browser.close = AsyncMock()
+
+        mock_pw = AsyncMock()
+        mock_pw.chromium.launch = AsyncMock(return_value=mock_browser)
+
+        mock_async_pw = AsyncMock()
+        mock_async_pw.__aenter__ = AsyncMock(return_value=mock_pw)
+        mock_async_pw.__aexit__ = AsyncMock(return_value=False)
+
+        return mock_async_pw, mock_browser, mock_context
+
+    @pytest.mark.asyncio
+    async def test_returns_results_for_all_assemblies(self) -> None:
+        mock_async_pw, mock_browser, mock_context = self._build_mocks()
+        assembly_configs = [
+            {"id": -1003, "name": "profile_all"},
+            {"id": -1021, "name": "daily_consumption"},
+        ]
+
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_async_pw
+        ):
+            fetcher = PndFetcher(electrometer_id="784703")
+            results = await fetcher.fetch_all(SAMPLE_COOKIES, "784703", assembly_configs)
+
+        assert "profile_all" in results
+        assert "daily_consumption" in results
+        mock_browser.close.assert_called_once()
+        mock_context.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_assembly_failure_is_skipped(self) -> None:
+        """A single assembly failure should not abort the whole batch."""
+        mock_async_pw, _, mock_context = self._build_mocks()
+
+        call_count = 0
+        original_post = mock_context.request.post
+
+        async def post_side_effect(*args: Any, **kwargs: Any) -> AsyncMock:
+            nonlocal call_count
+            call_count += 1
+            # warmup call (1st) + first real call (2nd) succeed,
+            # second real call (3rd) raises
+            if call_count == 3:
+                raise PndFetchError("network error")
+            return await original_post(*args, **kwargs)
+
+        mock_context.request.post.side_effect = post_side_effect
+
+        assembly_configs = [
+            {"id": -1003, "name": "profile_all"},
+            {"id": -1021, "name": "daily_consumption"},
+        ]
+
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_async_pw
+        ):
+            fetcher = PndFetcher(electrometer_id="784703")
+            results = await fetcher.fetch_all(SAMPLE_COOKIES, "784703", assembly_configs)
+
+        # Only the first (successful) assembly should be in results
+        assert "profile_all" in results
+        assert "daily_consumption" not in results
+
+    @pytest.mark.asyncio
+    async def test_yesterday_fallback_for_flagged_assembly(self) -> None:
+        """Assembly with fallback_yesterday=True retries yesterday on hasData=False."""
+        no_data_response = AsyncMock()
+        no_data_response.status = 200
+        no_data_response.headers = {"content-type": "application/json"}
+        no_data_response.json = AsyncMock(return_value={"hasData": False})
+
+        has_data_response = AsyncMock()
+        has_data_response.status = 200
+        has_data_response.headers = {"content-type": "application/json"}
+        has_data_response.json = AsyncMock(return_value={**SAMPLE_RESPONSE})
+
+        call_count = 0
+
+        async def post_side_effect(*args: Any, **kwargs: Any) -> AsyncMock:
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:  # warmup + first real call → no data
+                return no_data_response
+            return has_data_response  # yesterday fallback → has data
+
+        mock_async_pw, _, mock_context = self._build_mocks()
+        mock_context.request.post.side_effect = post_side_effect
+
+        assembly_configs = [
+            {"id": -1027, "name": "daily_registers", "fallback_yesterday": True},
+        ]
+
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_async_pw
+        ):
+            fetcher = PndFetcher(electrometer_id="784703")
+            results = await fetcher.fetch_all(SAMPLE_COOKIES, "784703", assembly_configs)
+
+        assert "daily_registers" in results
