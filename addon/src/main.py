@@ -60,7 +60,7 @@ def build_pnd_payload(
         "intervalTo": date_to,
         "compareFrom": None,
         "opmId": None,
-        "electrometerId": electrometer_id,
+        "electrometerId": electrometer_id if electrometer_id is not None else "",
     }
 
 
@@ -147,7 +147,11 @@ class PndFetcher:
                     )
 
                 headers_dict = response.headers or {}
-                content_type = headers_dict.get("content-type", "") if hasattr(headers_dict, "get") else ""
+                content_type = (
+                    headers_dict.get("content-type", "")
+                    if hasattr(headers_dict, "get")
+                    else ""
+                )
                 if "application/json" not in content_type.lower():
                     text = await response.text()
                     logger.warning(
@@ -223,7 +227,9 @@ class PndFetcher:
                 logger.debug("Navigating to PND base URL for WAF fingerprint...")
                 try:
                     page = await context.new_page()
-                    await page.goto(PND_BASE_URL, wait_until="domcontentloaded", timeout=30_000)
+                    await page.goto(
+                        PND_BASE_URL, wait_until="domcontentloaded", timeout=30_000
+                    )
                     await page.close()
                 except Exception as e:
                     logger.debug("PND navigation warmup failed (non-fatal): %s", e)
@@ -270,7 +276,9 @@ class PndFetcher:
                         )
                         continue
 
-                    if config.get("fallback_yesterday") and not payload.get("hasData", True):
+                    if config.get("fallback_yesterday") and not payload.get(
+                        "hasData", True
+                    ):
                         logger.warning(
                             "Assembly %s has no data for today, retrying yesterday",
                             assembly_name,
@@ -279,7 +287,11 @@ class PndFetcher:
                         yesterday_from = date_obj.strftime("%d.%m.%Y 00:00")
                         try:
                             payload = await self._fetch_one_in_context(
-                                context, meter_id, assembly_id, yesterday_from, date_from
+                                context,
+                                meter_id,
+                                assembly_id,
+                                yesterday_from,
+                                date_from,
                             )
                         except Exception as e:
                             logger.error(
@@ -308,21 +320,18 @@ class PndFetcher:
     async def _fetch_one_in_context(
         self,
         context: Any,
-        meter_id: str,
+        meter_id: Optional[str],
         assembly_id: int,
         date_from: str,
         date_to: str,
     ) -> Dict[str, Any]:
-        """Fetch a single assembly using an existing Playwright browser context."""
         payload = build_pnd_payload(assembly_id, date_from, date_to, meter_id)
         form_payload = {k: ("" if v is None else v) for k, v in payload.items()}
 
         response = await context.request.post(PND_DATA_URL, data=form_payload)
 
         if response.status == 302:
-            raise SessionExpiredError(
-                "PND fetch redirected (302) - session expired"
-            )
+            raise SessionExpiredError("PND fetch redirected (302) - session expired")
         if response.status != 200:
             raise PndFetchError(
                 f"PND fetch failed with status {response.status}",
@@ -330,7 +339,9 @@ class PndFetcher:
             )
 
         headers_dict = response.headers or {}
-        content_type = headers_dict.get("content-type", "") if hasattr(headers_dict, "get") else ""
+        content_type = (
+            headers_dict.get("content-type", "") if hasattr(headers_dict, "get") else ""
+        )
         if "application/json" not in content_type.lower():
             try:
                 text = await response.text()

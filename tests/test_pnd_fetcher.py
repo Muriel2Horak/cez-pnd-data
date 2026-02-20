@@ -309,7 +309,6 @@ class TestPndFetcher:
 
 
 class TestFetchOneInContext:
-    """Tests for PndFetcher._fetch_one_in_context (shared-context helper)."""
 
     def _build_mock_context(
         self,
@@ -341,7 +340,6 @@ class TestFetchOneInContext:
 
     @pytest.mark.asyncio
     async def test_form_payload_normalization(self) -> None:
-        """electrometerId=None must be sent as empty string."""
         mock_context = self._build_mock_context()
         fetcher = PndFetcher()
 
@@ -388,13 +386,11 @@ class TestFetchOneInContext:
 
 
 class TestFetchAll:
-    """Tests for PndFetcher.fetch_all (single-context batch fetch)."""
 
     def _build_mocks(
         self,
         response_data: dict[str, Any] | None = None,
     ) -> tuple[AsyncMock, AsyncMock, AsyncMock]:
-        """Build playwright mocks that also support new_page for WAF warmup."""
         response = AsyncMock()
         response.status = 200
         response.headers = {"content-type": "application/json"}
@@ -435,7 +431,9 @@ class TestFetchAll:
             "addon.src.main._get_async_playwright", return_value=lambda: mock_async_pw
         ):
             fetcher = PndFetcher(electrometer_id="784703")
-            results = await fetcher.fetch_all(SAMPLE_COOKIES, "784703", assembly_configs)
+            results = await fetcher.fetch_all(
+                SAMPLE_COOKIES, "784703", assembly_configs
+            )
 
         assert "profile_all" in results
         assert "daily_consumption" in results
@@ -444,20 +442,17 @@ class TestFetchAll:
 
     @pytest.mark.asyncio
     async def test_assembly_failure_is_skipped(self) -> None:
-        """A single assembly failure should not abort the whole batch."""
         mock_async_pw, _, mock_context = self._build_mocks()
 
         call_count = 0
-        original_post = mock_context.request.post
+        success_response = mock_context.request.post.return_value
 
         async def post_side_effect(*args: Any, **kwargs: Any) -> AsyncMock:
             nonlocal call_count
             call_count += 1
-            # warmup call (1st) + first real call (2nd) succeed,
-            # second real call (3rd) raises
             if call_count == 3:
                 raise PndFetchError("network error")
-            return await original_post(*args, **kwargs)
+            return success_response
 
         mock_context.request.post.side_effect = post_side_effect
 
@@ -470,15 +465,15 @@ class TestFetchAll:
             "addon.src.main._get_async_playwright", return_value=lambda: mock_async_pw
         ):
             fetcher = PndFetcher(electrometer_id="784703")
-            results = await fetcher.fetch_all(SAMPLE_COOKIES, "784703", assembly_configs)
+            results = await fetcher.fetch_all(
+                SAMPLE_COOKIES, "784703", assembly_configs
+            )
 
-        # Only the first (successful) assembly should be in results
         assert "profile_all" in results
         assert "daily_consumption" not in results
 
     @pytest.mark.asyncio
     async def test_yesterday_fallback_for_flagged_assembly(self) -> None:
-        """Assembly with fallback_yesterday=True retries yesterday on hasData=False."""
         no_data_response = AsyncMock()
         no_data_response.status = 200
         no_data_response.headers = {"content-type": "application/json"}
@@ -494,9 +489,9 @@ class TestFetchAll:
         async def post_side_effect(*args: Any, **kwargs: Any) -> AsyncMock:
             nonlocal call_count
             call_count += 1
-            if call_count <= 2:  # warmup + first real call → no data
+            if call_count <= 2:
                 return no_data_response
-            return has_data_response  # yesterday fallback → has data
+            return has_data_response
 
         mock_async_pw, _, mock_context = self._build_mocks()
         mock_context.request.post.side_effect = post_side_effect
@@ -509,6 +504,54 @@ class TestFetchAll:
             "addon.src.main._get_async_playwright", return_value=lambda: mock_async_pw
         ):
             fetcher = PndFetcher(electrometer_id="784703")
-            results = await fetcher.fetch_all(SAMPLE_COOKIES, "784703", assembly_configs)
+            results = await fetcher.fetch_all(
+                SAMPLE_COOKIES, "784703", assembly_configs
+            )
 
         assert "daily_registers" in results
+
+
+class TestPndFetcherErrorPaths:
+
+    @pytest.mark.asyncio
+    async def test_fetch_non_json_content_type_raises_pnd_fetch_error(self) -> None:
+        mock_pw, _, mock_context = _build_playwright_mocks()
+        response = mock_context.request.post.return_value
+        response.headers = {"content-type": "text/html; charset=UTF-8"}
+        response.text = AsyncMock(return_value="<html>error</html>")
+
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_pw
+        ):
+            fetcher = PndFetcher(electrometer_id="784703")
+            with pytest.raises(PndFetchError) as exc_info:
+                await fetcher.fetch(
+                    SAMPLE_COOKIES,
+                    assembly_id=-1003,
+                    date_from="20.02.2026 00:00",
+                    date_to="20.02.2026 23:59",
+                )
+
+        assert "non-JSON" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_fetch_json_parse_failure_raises_pnd_fetch_error(self) -> None:
+        mock_pw, _, mock_context = _build_playwright_mocks()
+        response = mock_context.request.post.return_value
+        response.headers = {"content-type": "application/json"}
+        response.json = AsyncMock(side_effect=ValueError("invalid json"))
+        response.text = AsyncMock(return_value="not-json-body")
+
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_pw
+        ):
+            fetcher = PndFetcher(electrometer_id="784703")
+            with pytest.raises(PndFetchError) as exc_info:
+                await fetcher.fetch(
+                    SAMPLE_COOKIES,
+                    assembly_id=-1003,
+                    date_from="20.02.2026 00:00",
+                    date_to="20.02.2026 23:59",
+                )
+
+        assert "JSON parse failed" in str(exc_info.value)
