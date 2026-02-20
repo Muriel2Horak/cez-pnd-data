@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from addon.src.main import PND_DATA_URL, PndFetchError, PndFetcher, build_pnd_payload
+from addon.src.main import PND_DATA_URL, PndFetcher, PndFetchError, build_pnd_payload
 from addon.src.orchestrator import SessionExpiredError
 
 SAMPLE_COOKIES: list[dict[str, Any]] = [

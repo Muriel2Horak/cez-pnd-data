@@ -26,7 +26,7 @@ PND_DATA_URL = "https://pnd.cezdistribuce.cz/cezpnd2/external/data"
 class PndFetchError(Exception):
     """Raised when PND data fetch fails (non-200 response, network error, etc.)."""
 
-    def __init__(self, message: str, status_code: int | None = None) -> None:
+    def __init__(self, message: str, status_code: Optional[int] = None) -> None:
         super().__init__(message)
         self.status_code = status_code
 
