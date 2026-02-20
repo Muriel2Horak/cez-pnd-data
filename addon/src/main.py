@@ -68,6 +68,15 @@ class PndFetcher:
     def __init__(self, electrometer_id: Optional[str] = None) -> None:
         self._electrometer_id = electrometer_id
 
+    @staticmethod
+    async def _create_browser_context(browser: Any) -> Any:
+        return await browser.new_context(
+            user_agent=DEFAULT_USER_AGENT,
+            locale="cs-CZ",
+            timezone_id="Europe/Prague",
+            viewport={"width": 1280, "height": 720},
+        )
+
     async def fetch(
         self,
         cookies: list,
@@ -80,12 +89,7 @@ class PndFetcher:
         async_playwright = _get_async_playwright()
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True)
-            context = await browser.new_context(
-                user_agent=DEFAULT_USER_AGENT,
-                locale="cs-CZ",
-                timezone_id="Europe/Prague",
-                viewport={"width": 1280, "height": 720},
-            )
+            context = await self._create_browser_context(browser)
             try:
                 await context.add_cookies(cookies)
 
@@ -104,14 +108,13 @@ class PndFetcher:
                     logger.debug("PND dashboard navigation failed (non-fatal): %s", e)
 
                 effective_electrometer_id = electrometer_id or self._electrometer_id
+
                 payload = build_pnd_payload(
                     assembly_id,
                     date_from,
                     date_to,
                     effective_electrometer_id,
                 )
-                # Normalize None values to empty strings — urllib.parse.urlencode encodes
-                # Python None as the string "None" which the server rejects.
                 form_payload = {k: ("" if v is None else v) for k, v in payload.items()}
 
                 # WAF warmup: Send JSON request first (will fail with 400, but sets WAF cookies/state)
@@ -130,59 +133,9 @@ class PndFetcher:
 
                 await asyncio.sleep(1)
 
-                logger.debug("Sending form request...")
-                response = await context.request.post(
-                    PND_DATA_URL,
-                    data=form_payload,
+                return await self._fetch_one_in_context(
+                    context, effective_electrometer_id, assembly_id, date_from, date_to
                 )
-
-                if response.status == 302:
-                    raise SessionExpiredError(
-                        "PND fetch redirected (302) - session expired"
-                    )
-                if response.status != 200:
-                    raise PndFetchError(
-                        f"PND fetch failed with status {response.status}",
-                        status_code=response.status,
-                    )
-
-                headers_dict = response.headers or {}
-                content_type = (
-                    headers_dict.get("content-type", "")
-                    if hasattr(headers_dict, "get")
-                    else ""
-                )
-                if "application/json" not in content_type.lower():
-                    text = await response.text()
-                    logger.warning(
-                        "PND fetch returned non-JSON response (Content-Type: %s): %s",
-                        content_type,
-                        text[:500] if text else "(empty)",
-                    )
-                    raise PndFetchError(
-                        f"PND fetch returned non-JSON response (Content-Type: {content_type})"
-                    )
-
-                try:
-                    data: Dict[str, Any] = await response.json()
-                except Exception as e:
-                    try:
-                        text = await response.text()
-                    except Exception:
-                        text = "(body unavailable)"
-                    logger.warning(
-                        "PND fetch JSON parse failed: %s, response: %s",
-                        e,
-                        text[:500] if text else "(empty)",
-                    )
-                    raise PndFetchError(f"PND fetch JSON parse failed: {e}")
-                logger.debug(
-                    "PND fetch assembly=%d status=%d hasData=%s",
-                    assembly_id,
-                    response.status,
-                    data.get("hasData"),
-                )
-                return data
             finally:
                 await context.close()
                 await browser.close()
@@ -203,23 +156,16 @@ class PndFetcher:
 
         Returns a dict mapping assembly name → payload for assemblies with data.
         """
-        from datetime import timedelta
+        from datetime import datetime, timedelta
 
-        from .orchestrator import ASSEMBLY_CONFIGS as _ASSEMBLY_CONFIGS  # noqa: F401
-
-        today = __import__("datetime").datetime.now()
+        today = datetime.now()
         date_from = today.strftime("%d.%m.%Y 00:00")
         date_to = today.strftime("%d.%m.%Y 23:59")
 
         async_playwright = _get_async_playwright()
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True)
-            context = await browser.new_context(
-                user_agent=DEFAULT_USER_AGENT,
-                locale="cs-CZ",
-                timezone_id="Europe/Prague",
-                viewport={"width": 1280, "height": 720},
-            )
+            context = await self._create_browser_context(browser)
             try:
                 await context.add_cookies(cookies)
 
