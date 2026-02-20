@@ -26,8 +26,9 @@ from addon.src.orchestrator import (
     ASSEMBLY_CONFIGS,
     CEZ_FETCH_ERROR,
     HDO_FETCH_ERROR,
+    HDO_TOKEN_ERROR,
     MQTT_PUBLISH_ERROR,
-    SESSION_EXPIRED_ERROR,
+    SESSION_EXPIRED,
     Orchestrator,
     OrchestratorConfig,
 )
@@ -586,8 +587,8 @@ class TestErrorSentinels:
     def test_mqtt_publish_error_defined(self) -> None:
         assert isinstance(MQTT_PUBLISH_ERROR, str)
 
-    def test_session_expired_error_defined(self) -> None:
-        assert isinstance(SESSION_EXPIRED_ERROR, str)
+    def test_session_expired_defined(self) -> None:
+        assert isinstance(SESSION_EXPIRED, str)
 
 
 # Import the custom exception used in tests above

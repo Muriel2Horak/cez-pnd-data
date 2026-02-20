@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable
 
 from .auth import ServiceMaintenanceError
-from .dip_client import DipMaintenanceError
+from .dip_client import DipMaintenanceError, DipTokenError
 from .hdo_parser import parse_hdo_signals
 from .parser import CezDataParser
 
@@ -41,11 +41,13 @@ _PARSER_KEY_TO_SENSOR_KEY: dict[str, str] = {
 
 CEZ_FETCH_ERROR = "CEZ_FETCH_ERROR"
 MQTT_PUBLISH_ERROR = "MQTT_PUBLISH_ERROR"
-SESSION_EXPIRED_ERROR = "SESSION_EXPIRED_ERROR"
+SESSION_EXPIRED = "SESSION_EXPIRED"
 NO_DATA_WARNING = "NO_DATA_AVAILABLE"
 FETCH_ERROR = "ASSEMBLY_FETCH_ERROR"
 HDO_FETCH_ERROR = "HDO_FETCH_ERROR"
+HDO_TOKEN_ERROR = "HDO_TOKEN_ERROR"
 DIP_MAINTENANCE = "DIP_MAINTENANCE"
+PORTAL_MAINTENANCE = "PORTAL_MAINTENANCE"
 
 
 class SessionExpiredError(Exception):
@@ -134,12 +136,12 @@ class Orchestrator:
         try:
             session = await self._auth.ensure_session()
         except ServiceMaintenanceError as e:
-            logger.warning("[%s] %s — skipping cycle", DIP_MAINTENANCE, e)
+            logger.warning("[%s] %s — skipping cycle", PORTAL_MAINTENANCE, e)
             return
         except Exception as e:
             logger.error(
                 "[%s] Auth failure — cannot obtain session: %s — skipping cycle",
-                SESSION_EXPIRED_ERROR,
+                SESSION_EXPIRED,
                 e,
             )
             logger.debug("Auth failure details:", exc_info=True)
@@ -196,6 +198,13 @@ class Orchestrator:
                         DIP_MAINTENANCE,
                         e,
                         meter_id,
+                    )
+                except DipTokenError as e:
+                    logger.error(
+                        "[%s] Token acquisition failed for meter %s: %s — PND unaffected",
+                        HDO_TOKEN_ERROR,
+                        meter_id,
+                        e,
                     )
                 except Exception as e:
                     logger.error(
@@ -320,13 +329,13 @@ class Orchestrator:
                 if _reauthed:
                     logger.error(
                         "[%s] Session still expired after re-auth — aborting cycle",
-                        SESSION_EXPIRED_ERROR,
+                        SESSION_EXPIRED,
                     )
                     return None
 
                 logger.warning(
                     "[%s] Session expired — attempting re-authentication",
-                    SESSION_EXPIRED_ERROR,
+                    SESSION_EXPIRED,
                 )
                 try:
                     session = await self._auth.ensure_session()
@@ -334,7 +343,7 @@ class Orchestrator:
                 except Exception:
                     logger.error(
                         "[%s] Re-authentication failed — aborting cycle",
-                        SESSION_EXPIRED_ERROR,
+                        SESSION_EXPIRED,
                     )
                     return None
 
