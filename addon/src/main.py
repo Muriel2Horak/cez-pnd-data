@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 import aiohttp
 import paho.mqtt.client as mqtt_client
 
-from .auth import PlaywrightAuthClient
+from .auth import DEFAULT_USER_AGENT, PND_BASE_URL, PlaywrightAuthClient
 from .dip_client import DipClient
 from .mqtt_publisher import MqttPublisher
 from .orchestrator import Orchestrator, OrchestratorConfig, SessionExpiredError
@@ -60,13 +60,22 @@ def build_pnd_payload(
         "intervalTo": date_to,
         "compareFrom": None,
         "opmId": None,
-        "electrometerId": electrometer_id,
+        "electrometerId": electrometer_id if electrometer_id is not None else "",
     }
 
 
 class PndFetcher:
     def __init__(self, electrometer_id: Optional[str] = None) -> None:
         self._electrometer_id = electrometer_id
+
+    @staticmethod
+    async def _create_browser_context(browser: Any) -> Any:
+        return await browser.new_context(
+            user_agent=DEFAULT_USER_AGENT,
+            locale="cs-CZ",
+            timezone_id="Europe/Prague",
+            viewport={"width": 1280, "height": 720},
+        )
 
     async def fetch(
         self,
@@ -80,22 +89,40 @@ class PndFetcher:
         async_playwright = _get_async_playwright()
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True)
-            context = await browser.new_context()
+            context = await self._create_browser_context(browser)
             try:
                 await context.add_cookies(cookies)
+
+                # Navigate to PND dashboard to establish WAF fingerprint (same as live_verify_flow.py)
+                logger.debug("Navigating to PND dashboard for WAF fingerprint...")
+                try:
+                    page = await context.new_page()
+                    await page.goto(
+                        "https://pnd.cezdistribuce.cz/cezpnd2/dashboard/view",
+                        wait_until="domcontentloaded",
+                        timeout=30_000,
+                    )
+                    await page.close()
+                    await asyncio.sleep(3)
+                except Exception as e:
+                    logger.debug("PND dashboard navigation failed (non-fatal): %s", e)
+
                 effective_electrometer_id = electrometer_id or self._electrometer_id
+
                 payload = build_pnd_payload(
                     assembly_id,
                     date_from,
                     date_to,
                     effective_electrometer_id,
                 )
+                form_payload = {k: ("" if v is None else v) for k, v in payload.items()}
+
                 # WAF warmup: Send JSON request first (will fail with 400, but sets WAF cookies/state)
                 logger.debug("WAF warmup (JSON request)...")
                 try:
                     warmup_response = await context.request.post(
                         PND_DATA_URL,
-                        data=json.dumps(payload),
+                        data=json.dumps(form_payload),
                         headers={"Content-Type": "application/json"},
                     )
                     logger.debug(
@@ -106,34 +133,196 @@ class PndFetcher:
 
                 await asyncio.sleep(1)
 
-                # Now the actual form request (should work after warmup)
-                logger.debug("Sending form request...")
-                response = await context.request.post(
-                    PND_DATA_URL,
-                    data=payload,
+                return await self._fetch_one_in_context(
+                    context, effective_electrometer_id, assembly_id, date_from, date_to
                 )
-
-                if response.status == 302:
-                    raise SessionExpiredError(
-                        "PND fetch redirected (302) - session expired"
-                    )
-                if response.status != 200:
-                    raise PndFetchError(
-                        f"PND fetch failed with status {response.status}",
-                        status_code=response.status,
-                    )
-
-                data: Dict[str, Any] = await response.json()
-                logger.debug(
-                    "PND fetch assembly=%d status=%d hasData=%s",
-                    assembly_id,
-                    response.status,
-                    data.get("hasData"),
-                )
-                return data
             finally:
                 await context.close()
                 await browser.close()
+
+    async def fetch_all(
+        self,
+        cookies: list,
+        meter_id: str,
+        assembly_configs: list,
+    ) -> Dict[str, Any]:
+        """Fetch all assemblies in a single browser context per cycle.
+
+        Creates ONE Playwright browser for all assemblies. Navigates to PND base
+        URL first to establish WAF state, then does a single WAF warmup POST before
+        iterating through all assembly fetches in the same context.
+
+        Handles Tab 17 (daily_registers) yesterday-fallback internally.
+
+        Returns a dict mapping assembly name → payload for assemblies with data.
+        """
+        from datetime import datetime, timedelta
+
+        today = datetime.now()
+        date_from = today.strftime("%d.%m.%Y 00:00")
+        date_to = today.strftime("%d.%m.%Y 23:59")
+
+        async_playwright = _get_async_playwright()
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            context = await self._create_browser_context(browser)
+            try:
+                await context.add_cookies(cookies)
+
+                # Navigate to PND base URL to establish browser history / WAF fingerprint
+                logger.debug("Navigating to PND base URL for WAF fingerprint...")
+                try:
+                    page = await context.new_page()
+                    await page.goto(
+                        PND_BASE_URL, wait_until="domcontentloaded", timeout=30_000
+                    )
+                    await page.close()
+                except Exception as e:
+                    logger.debug("PND navigation warmup failed (non-fatal): %s", e)
+
+                # Single WAF warmup POST using the first assembly
+                first_config = assembly_configs[0]
+                warmup_payload = build_pnd_payload(
+                    first_config["id"],
+                    date_from,
+                    date_to,
+                    meter_id,
+                )
+                logger.debug("WAF warmup (JSON request for all assemblies)...")
+                try:
+                    warmup_response = await context.request.post(
+                        PND_DATA_URL,
+                        data=json.dumps(warmup_payload),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    logger.debug(
+                        "Warmup status: %d (expected 400)", warmup_response.status
+                    )
+                except Exception as e:
+                    logger.debug("Warmup POST failed: %s (expected)", e)
+
+                await asyncio.sleep(1)
+
+                results: Dict[str, Any] = {}
+
+                for config in assembly_configs:
+                    assembly_id: int = config["id"]
+                    assembly_name: str = config["name"]
+
+                    try:
+                        payload = await self._fetch_one_in_context(
+                            context, meter_id, assembly_id, date_from, date_to
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "Assembly %s failed for meter %s: %s — continuing",
+                            assembly_name,
+                            meter_id,
+                            e,
+                        )
+                        continue
+
+                    if config.get("fallback_yesterday") and not payload.get(
+                        "hasData", True
+                    ):
+                        logger.warning(
+                            "Assembly %s has no data for today, retrying yesterday",
+                            assembly_name,
+                        )
+                        date_obj = today - timedelta(days=1)
+                        yesterday_from = date_obj.strftime("%d.%m.%Y 00:00")
+                        try:
+                            payload = await self._fetch_one_in_context(
+                                context,
+                                meter_id,
+                                assembly_id,
+                                yesterday_from,
+                                date_from,
+                            )
+                        except Exception as e:
+                            logger.error(
+                                "Assembly %s yesterday-fallback failed for meter %s: %s",
+                                assembly_name,
+                                meter_id,
+                                e,
+                            )
+                            continue
+
+                    if payload and payload.get("hasData"):
+                        results[assembly_name] = payload
+                    else:
+                        logger.warning(
+                            "Assembly %s has no data for meter %s",
+                            assembly_name,
+                            meter_id,
+                        )
+
+                return results
+
+            finally:
+                await context.close()
+                await browser.close()
+
+    async def _fetch_one_in_context(
+        self,
+        context: Any,
+        meter_id: Optional[str],
+        assembly_id: int,
+        date_from: str,
+        date_to: str,
+    ) -> Dict[str, Any]:
+        payload = build_pnd_payload(assembly_id, date_from, date_to, meter_id)
+        form_payload = {k: ("" if v is None else v) for k, v in payload.items()}
+
+        response = await context.request.post(PND_DATA_URL, data=form_payload)
+
+        if response.status == 302:
+            raise SessionExpiredError("PND fetch redirected (302) - session expired")
+        if response.status != 200:
+            raise PndFetchError(
+                f"PND fetch failed with status {response.status}",
+                status_code=response.status,
+            )
+
+        headers_dict = response.headers or {}
+        content_type = (
+            headers_dict.get("content-type", "") if hasattr(headers_dict, "get") else ""
+        )
+        if "application/json" not in content_type.lower():
+            try:
+                text = await response.text()
+            except Exception:
+                text = "(body unavailable)"
+            logger.warning(
+                "PND fetch returned non-JSON response (Content-Type: %s): %s",
+                content_type,
+                text[:500] if text else "(empty)",
+            )
+            raise PndFetchError(
+                f"PND fetch returned non-JSON response (Content-Type: {content_type})"
+            )
+
+        try:
+            data: Dict[str, Any] = await response.json()
+        except Exception as e:
+            try:
+                text = await response.text()
+            except Exception:
+                text = "(body unavailable)"
+            logger.warning(
+                "PND fetch JSON parse failed: %s, response: %s",
+                e,
+                text[:500] if text else "(empty)",
+            )
+            raise PndFetchError(f"PND fetch JSON parse failed: {e}")
+
+        logger.debug(
+            "PND fetch assembly=%d status=%d hasData=%s",
+            assembly_id,
+            response.status,
+            data.get("hasData"),
+        )
+        return data
 
 
 class MQTTClientWrapper:
