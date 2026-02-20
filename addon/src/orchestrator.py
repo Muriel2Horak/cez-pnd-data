@@ -14,7 +14,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Union
 
 from .auth import ServiceMaintenanceError
 from .dip_client import DipMaintenanceError, DipTokenError
@@ -86,6 +86,8 @@ class OrchestratorConfig:
 FetcherCallable = Callable[..., Awaitable[dict[str, Any]]]
 HdoFetcherCallable = Callable[..., Awaitable[dict[str, Any]]]
 
+FetcherType = Union[FetcherCallable, Any]
+
 ASSEMBLY_CONFIGS: list[dict[str, Any]] = [
     {"id": -1003, "name": "profile_all"},
     {"id": -1012, "name": "profile_consumption_reactive"},
@@ -103,13 +105,13 @@ class Orchestrator:
         self,
         config: OrchestratorConfig,
         auth_client: Any,
-        fetcher: FetcherCallable,
+        fetcher: FetcherType,
         mqtt_publisher: Any,
         hdo_fetcher: HdoFetcherCallable | None = None,
     ) -> None:
         self._config = config
         self._auth = auth_client
-        self._fetcher = fetcher
+        self._fetcher: FetcherType = fetcher
         self._hdo_fetcher = hdo_fetcher
         self._mqtt = mqtt_publisher
 
@@ -278,6 +280,19 @@ class Orchestrator:
         meter_id: str = "unknown",
     ) -> dict[str, Any]:
         """Fetch all 6 PND assemblies and return merged data."""
+        fetcher_obj = getattr(self._fetcher, "__self__", None)
+        if fetcher_obj is not None and hasattr(fetcher_obj, "fetch_all"):
+            try:
+                return await fetcher_obj.fetch_all(cookies, meter_id, ASSEMBLY_CONFIGS)
+            except Exception as e:
+                logger.error(
+                    "[%s] Batch fetch_all failed for meter %s: %s",
+                    FETCH_ERROR,
+                    meter_id,
+                    e,
+                )
+                return {}
+
         results = {}
         today = datetime.now()
         date_from = today.strftime("%d.%m.%Y 00:00")
