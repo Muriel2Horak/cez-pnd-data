@@ -13,7 +13,6 @@ import signal
 import sys
 from typing import Any, Dict, List, Optional
 
-import aiohttp
 import paho.mqtt.client as mqtt_client
 
 from .auth import DEFAULT_USER_AGENT, PND_BASE_URL, PlaywrightAuthClient
@@ -325,6 +324,20 @@ class PndFetcher:
         return data
 
 
+class PlaywrightHdoFetcher:
+    async def fetch(self, cookies: list, ean: str) -> dict:
+        async_playwright = _get_async_playwright()
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            context = await PndFetcher._create_browser_context(browser)
+            try:
+                await context.add_cookies(cookies)
+                return await DipClient().fetch_hdo(context, ean)
+            finally:
+                await context.close()
+                await browser.close()
+
+
 class MQTTClientWrapper:
     """Wrapper for paho.mqtt.client to match expected interface."""
 
@@ -505,12 +518,6 @@ async def main():
         credentials_provider=credentials_provider, session_store=session_store
     )
 
-    # Create shared aiohttp.ClientSession for all API calls
-    api_session = None
-
-    # API clients (will be created inside async context)
-    dip_client = None
-
     # These will be replaced inside the async with block
     pnd_fetcher = None
     hdo_fetcher = None
@@ -527,19 +534,15 @@ async def main():
         poll_interval_seconds=900,  # 15 minutes
     )
 
-    # Run orchestrator inside async context with shared aiohttp session
     async def run_orchestrator_with_session():
-        nonlocal api_session, dip_client, pnd_fetcher, hdo_fetcher
+        nonlocal pnd_fetcher, hdo_fetcher
 
-        # API clients and fetchers
-        api_session = aiohttp.ClientSession()
-        dip_client = DipClient(session=api_session)
         pnd_fetcher = PndFetcher().fetch
         has_hdo_ean = any(
             isinstance(e, dict) and e.get("ean")
             for e in config["cez"].get("electrometers", [])
         )
-        hdo_fetcher = dip_client.fetch_hdo if has_hdo_ean else None
+        hdo_fetcher = PlaywrightHdoFetcher().fetch if has_hdo_ean else None
 
         orchestrator = Orchestrator(
             config=orchestrator_config,
