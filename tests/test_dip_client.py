@@ -8,14 +8,23 @@ from unittest.mock import AsyncMock, Mock
 import aiohttp
 import pytest
 
-from addon.src.dip_client import DipClient, DipFetchError, DipMaintenanceError, DipTokenError
+from addon.src.dip_client import (
+    DipClient,
+    DipFetchError,
+    DipMaintenanceError,
+    DipTokenError,
+)
 
 SAMPLE_COOKIES = [
     {"name": "JSESSIONID", "value": "abc123"},
 ]
 
 
-def _mock_response(status: int = 200, json_data: dict | None = None, content_type: str = "application/json") -> AsyncMock:
+def _mock_response(
+    status: int = 200,
+    json_data: dict | None = None,
+    content_type: str = "application/json",
+) -> AsyncMock:
     """Create a mock HTTP response with proper headers attribute.
 
     Args:
@@ -184,7 +193,9 @@ async def test_fetch_hdo_returns_data_field():
     mock_token_response = _mock_response(json_data={"token": "test"})
 
     expected_data = {"signal": "EVV2", "casy": ["08:00-16:00"]}
-    mock_signals_response = _mock_response(json_data={"data": expected_data, "other": "ignored"})
+    mock_signals_response = _mock_response(
+        json_data={"data": expected_data, "other": "ignored"}
+    )
 
     mock_token_cm = Mock()
     mock_token_cm.__aenter__ = AsyncMock(return_value=mock_token_response)
@@ -376,7 +387,9 @@ async def test_fetch_hdo_uses_injected_session():
     """Uses aiohttp.ClientSession from constructor (no Playwright)"""
     session = Mock()
 
-    mock_response = _mock_response(json_data={"token": "test", "data": {"signal": "test"}})
+    mock_response = _mock_response(
+        json_data={"token": "test", "data": {"signal": "test"}}
+    )
 
     mock_cm = Mock()
     mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
@@ -478,7 +491,9 @@ async def test_fetch_hdo_raises_maintenance_on_html_signals_response():
 
     mock_token_response = _mock_response(json_data={"token": "test-token"})
 
-    mock_signals_response = _mock_response(status=200, content_type="text/html; charset=UTF-8")
+    mock_signals_response = _mock_response(
+        status=200, content_type="text/html; charset=UTF-8"
+    )
 
     mock_token_cm = Mock()
     mock_token_cm.__aenter__ = AsyncMock(return_value=mock_token_response)
@@ -497,7 +512,8 @@ async def test_fetch_hdo_raises_maintenance_on_html_signals_response():
     client = DipClient(session=session)
 
     with pytest.raises(
-        DipMaintenanceError, match="Signals endpoint returned HTML \\(maintenance page\\)"
+        DipMaintenanceError,
+        match="Signals endpoint returned HTML \\(maintenance page\\)",
     ):
         await client.fetch_hdo(SAMPLE_COOKIES, ean="123")
 

@@ -13,7 +13,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-
 # =============================================================================
 # PND API Response Fixtures (301/302 redirects, JSON data)
 # =============================================================================
@@ -169,8 +168,7 @@ def dip_html_maintenance_response() -> AsyncMock:
     response = AsyncMock()
     response.status = 200
     response.headers = {"Content-Type": "text/html; charset=UTF-8"}
-    response.text = AsyncMock(
-        return_value="""
+    response.text = AsyncMock(return_value="""
 <!DOCTYPE html>
 <html>
 <head>
@@ -182,8 +180,7 @@ def dip_html_maintenance_response() -> AsyncMock:
     <p>Omlouváme se za nepříjemnosti.</p>
 </body>
 </html>
-        """.strip()
-    )
+        """.strip())
     return response
 
 
@@ -199,8 +196,7 @@ def dip_html_login_page_response() -> AsyncMock:
     response = AsyncMock()
     response.status = 200
     response.headers = {"Content-Type": "text/html; charset=UTF-8"}
-    response.text = AsyncMock(
-        return_value="""
+    response.text = AsyncMock(return_value="""
 <!DOCTYPE html>
 <html>
 <head>
@@ -214,8 +210,7 @@ def dip_html_login_page_response() -> AsyncMock:
     </form>
 </body>
 </html>
-        """.strip()
-    )
+        """.strip())
     return response
 
 
@@ -244,8 +239,7 @@ def dip_503_service_unavailable_response() -> AsyncMock:
     response = AsyncMock()
     response.status = 503
     response.headers = {"Content-Type": "text/html; charset=UTF-8"}
-    response.text = AsyncMock(
-        return_value="""
+    response.text = AsyncMock(return_value="""
 <!DOCTYPE html>
 <html>
 <head><title>Service Unavailable</title></head>
@@ -254,8 +248,7 @@ def dip_503_service_unavailable_response() -> AsyncMock:
     <p>The server is temporarily unable to service your request.</p>
 </body>
 </html>
-        """.strip()
-    )
+        """.strip())
     return response
 
 
@@ -296,7 +289,9 @@ def mock_playwright_response(pnd_json_response: AsyncMock) -> AsyncMock:
     - url(): Returns mock URL
     """
     response = pnd_json_response
-    response.url = AsyncMock(return_value="https://pnd.cezdistribuce.cz/cezpnd2/external/data")
+    response.url = AsyncMock(
+        return_value="https://pnd.cezdistribuce.cz/cezpnd2/external/data"
+    )
     return response
 
 

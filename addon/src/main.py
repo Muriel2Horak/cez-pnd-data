@@ -30,6 +30,7 @@ class PndFetchError(Exception):
         super().__init__(message)
         self.status_code = status_code
 
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
