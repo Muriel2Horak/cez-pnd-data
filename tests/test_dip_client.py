@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -11,6 +11,7 @@ from addon.src.dip_client import (
     DipMaintenanceError,
     DipTokenError,
 )
+from addon.src.main import PlaywrightHdoFetcher
 
 
 def _mock_response(
@@ -192,7 +193,7 @@ async def test_fetch_hdo_raises_maintenance_on_html_token_response():
     context = _mock_context(token_resp)
 
     with pytest.raises(
-        DipMaintenanceError, match="Token endpoint returned HTML \(maintenance page\)"
+        DipMaintenanceError, match=r"Token endpoint returned HTML \(maintenance page\)"
     ):
         await DipClient().fetch_hdo(context, ean="123")
 
@@ -204,7 +205,7 @@ async def test_fetch_hdo_raises_maintenance_on_html_signals_response():
     context = _mock_context(token_resp, signals_resp)
 
     with pytest.raises(
-        DipMaintenanceError, match="Signals endpoint returned HTML \(maintenance page\)"
+        DipMaintenanceError, match=r"Signals endpoint returned HTML \(maintenance page\)"
     ):
         await DipClient().fetch_hdo(context, ean="123")
 
@@ -215,7 +216,7 @@ async def test_fetch_hdo_raises_maintenance_on_400_token():
     context = _mock_context(token_resp)
 
     with pytest.raises(
-        DipMaintenanceError, match="Token endpoint unavailable \(HTTP 400\)"
+        DipMaintenanceError, match=r"Token endpoint unavailable \(HTTP 400\)"
     ):
         await DipClient().fetch_hdo(context, ean="123")
 
@@ -226,7 +227,7 @@ async def test_fetch_hdo_raises_maintenance_on_503_token():
     context = _mock_context(token_resp)
 
     with pytest.raises(
-        DipMaintenanceError, match="Token endpoint unavailable \(HTTP 503\)"
+        DipMaintenanceError, match=r"Token endpoint unavailable \(HTTP 503\)"
     ):
         await DipClient().fetch_hdo(context, ean="123")
 
@@ -238,7 +239,7 @@ async def test_fetch_hdo_raises_maintenance_on_400_signals():
     context = _mock_context(token_resp, signals_resp)
 
     with pytest.raises(
-        DipMaintenanceError, match="Signals endpoint unavailable \(HTTP 400\)"
+        DipMaintenanceError, match=r"Signals endpoint unavailable \(HTTP 400\)"
     ):
         await DipClient().fetch_hdo(context, ean="123")
 
@@ -250,7 +251,7 @@ async def test_fetch_hdo_raises_maintenance_on_503_signals():
     context = _mock_context(token_resp, signals_resp)
 
     with pytest.raises(
-        DipMaintenanceError, match="Signals endpoint unavailable \(HTTP 503\)"
+        DipMaintenanceError, match=r"Signals endpoint unavailable \(HTTP 503\)"
     ):
         await DipClient().fetch_hdo(context, ean="123")
 
@@ -283,3 +284,63 @@ async def test_fetch_hdo_preserves_return_format():
 
 def test_dip_maintenance_error_is_subclass_of_dip_fetch_error():
     assert issubclass(DipMaintenanceError, DipFetchError)
+
+
+def _build_hdo_playwright_mocks(hdo_result: dict) -> tuple:
+    mock_context = AsyncMock()
+    mock_context.add_cookies = AsyncMock()
+    mock_context.close = AsyncMock()
+
+    mock_browser = AsyncMock()
+    mock_browser.close = AsyncMock()
+
+    mock_pw = AsyncMock()
+    mock_pw.chromium.launch = AsyncMock(return_value=mock_browser)
+
+    mock_async_pw = AsyncMock()
+    mock_async_pw.__aenter__ = AsyncMock(return_value=mock_pw)
+    mock_async_pw.__aexit__ = AsyncMock(return_value=False)
+
+    return mock_async_pw, mock_browser, mock_context, hdo_result
+
+
+@pytest.mark.asyncio
+async def test_playwright_hdo_fetcher_returns_dip_result():
+    expected = {"signal": "EVV2", "casy": ["08:00-16:00"]}
+    mock_async_pw, mock_browser, mock_context, _ = _build_hdo_playwright_mocks(expected)
+
+    with (
+        patch(
+            "addon.src.main._get_async_playwright",
+            return_value=lambda: mock_async_pw,
+        ),
+        patch(
+            "addon.src.main.PndFetcher._create_browser_context",
+            new=AsyncMock(return_value=mock_context),
+        ),
+        patch.object(DipClient, "fetch_hdo", new=AsyncMock(return_value=expected)),
+    ):
+        result = await PlaywrightHdoFetcher().fetch(cookies=[{"name": "x"}], ean="123")
+
+    assert result == expected
+
+
+@pytest.mark.asyncio
+async def test_playwright_hdo_fetcher_adds_cookies_to_context():
+    cookies = [{"name": "JSESSIONID", "value": "sess", "domain": ".cez.cz", "path": "/"}]
+    mock_async_pw, mock_browser, mock_context, _ = _build_hdo_playwright_mocks({})
+
+    with (
+        patch(
+            "addon.src.main._get_async_playwright",
+            return_value=lambda: mock_async_pw,
+        ),
+        patch(
+            "addon.src.main.PndFetcher._create_browser_context",
+            new=AsyncMock(return_value=mock_context),
+        ),
+        patch.object(DipClient, "fetch_hdo", new=AsyncMock(return_value={})),
+    ):
+        await PlaywrightHdoFetcher().fetch(cookies=cookies, ean="123")
+
+    mock_context.add_cookies.assert_called_once_with(cookies)
