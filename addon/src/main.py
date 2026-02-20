@@ -326,8 +326,8 @@ class PndFetcher:
 
 class PlaywrightHdoFetcher:
     def __init__(self) -> None:
-        self._pw_cm = None
-        self._browser = None
+        self._pw_cm: Any = None
+        self._browser: Any = None
 
     async def _ensure_browser(self) -> None:
         if self._browser is not None:
@@ -540,7 +540,7 @@ async def main():
     # These will be replaced inside the async with block
     pnd_fetcher = None
     hdo_fetcher = None
-    hdo_fetcher_instance: PlaywrightHdoFetcher | None = None
+    hdo_fetcher_instance: Optional[PlaywrightHdoFetcher] = None
 
     mqtt_publisher = MqttPublisher(
         mqtt_client,
