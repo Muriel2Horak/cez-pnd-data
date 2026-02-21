@@ -1334,8 +1334,6 @@ class TestHdoIntegration:
 
     @pytest.mark.asyncio
     async def test_hdo_skipped_when_reauth_fails(self, caplog) -> None:
-        from unittest.mock import Mock
-
         dead_session = MagicMock(cookies=[{"name": "x"}], reused=False)
         dead_session.has_live_context = False
 

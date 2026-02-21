@@ -14,10 +14,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Union
-
-if TYPE_CHECKING:
-    from playwright.async_api import BrowserContext  # type: ignore[import-not-found]
+from typing import Any, Awaitable, Callable, Union
 
 from .auth import ServiceMaintenanceError
 from .dip_client import DipMaintenanceError, DipTokenError

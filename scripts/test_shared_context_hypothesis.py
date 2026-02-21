@@ -159,10 +159,10 @@ async def test_a_fresh_context_fails(browser, ean: str) -> dict:
     }
 
     if expected:
-        print(f"\n  RESULT: PASS (correctly reproduced broken pattern)")
-        print(f"    → DIP returned HTML/error instead of JSON")
+        print("\n  RESULT: PASS (correctly reproduced broken pattern)")
+        print("    → DIP returned HTML/error instead of JSON")
     else:
-        print(f"\n  RESULT: UNEXPECTED (got valid data - hypothesis may be wrong)")
+        print("\n  RESULT: UNEXPECTED (got valid data - hypothesis may be wrong)")
 
     return result
 
@@ -217,10 +217,10 @@ async def test_b_shared_context_succeeds(browser, ean: str) -> dict:
     }
 
     if is_json and has_data:
-        print(f"\n  RESULT: PASS (correctly reproduced working pattern)")
-        print(f"    → DIP returned valid HDO JSON data")
+        print("\n  RESULT: PASS (correctly reproduced working pattern)")
+        print("    → DIP returned valid HDO JSON data")
     else:
-        print(f"\n  RESULT: UNEXPECTED (failed to get HDO data)")
+        print("\n  RESULT: UNEXPECTED (failed to get HDO data)")
 
     return result
 
@@ -265,11 +265,11 @@ async def async_main() -> int:
     test_b_passed = result_b.get("has_hdo_data", False)
 
     print(f"\nTest A (Fresh Context):     {'PASS' if test_a_passed else 'FAIL'}")
-    print(f"  → Expected: HTML/error (reproduces broken pattern)")
+    print("  → Expected: HTML/error (reproduces broken pattern)")
     print(f"  → Got: status={result_a.get('status')}, html={result_a.get('is_html')}")
 
     print(f"\nTest B (Shared Context):    {'PASS' if test_b_passed else 'FAIL'}")
-    print(f"  → Expected: Valid HDO JSON data")
+    print("  → Expected: Valid HDO JSON data")
     print(f"  → Got: status={result_b.get('status')}, json={result_b.get('is_json')}")
 
     # Final verdict
