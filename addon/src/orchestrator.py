@@ -14,7 +14,10 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Awaitable, Callable, Union
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Union
+
+if TYPE_CHECKING:
+    from playwright.async_api import BrowserContext  # type: ignore[import-not-found]
 
 from .auth import ServiceMaintenanceError
 from .dip_client import DipMaintenanceError, DipTokenError
@@ -185,36 +188,55 @@ class Orchestrator:
             logger.info("No data available in CEZ response, skipping PND publish")
 
         if self._hdo_fetcher:
-            for electrometer in self._config.electrometers:
-                meter_id = electrometer.get("electrometer_id", "unknown")
-                ean = electrometer.get("ean", "")
-                if not ean:
-                    continue
+            if not session.has_live_context:
+                logger.warning("Context dead, forcing reauth for HDO fetch")
                 try:
-                    hdo_raw = await self._hdo_fetcher(cookies, ean)
-                    hdo_data = parse_hdo_signals(hdo_raw)
-                    self._mqtt.publish_hdo_state(hdo_data, electrometer_id=meter_id)
-                except DipMaintenanceError as e:
-                    logger.warning(
-                        "[%s] %s for meter %s — skipping HDO this cycle",
-                        DIP_MAINTENANCE,
-                        e,
-                        meter_id,
-                    )
-                except DipTokenError as e:
-                    logger.error(
-                        "[%s] Token acquisition failed for meter %s: %s — PND unaffected",
-                        HDO_TOKEN_ERROR,
-                        meter_id,
-                        e,
-                    )
+                    session = await self._auth.ensure_session()
                 except Exception as e:
                     logger.error(
-                        "[%s] HDO fetch/parse/publish failed for meter %s: %s — PND unaffected",
+                        "[%s] Re-auth for HDO failed: %s — skipping HDO this cycle",
                         HDO_FETCH_ERROR,
-                        meter_id,
                         e,
                     )
+                    session = None  # type: ignore[assignment]
+
+            if session is not None and session.has_live_context:
+                context = session.context
+                for electrometer in self._config.electrometers:
+                    meter_id = electrometer.get("electrometer_id", "unknown")
+                    ean = electrometer.get("ean", "")
+                    if not ean:
+                        continue
+                    try:
+                        hdo_raw = await self._hdo_fetcher(context, ean)
+                        hdo_data = parse_hdo_signals(hdo_raw)
+                        self._mqtt.publish_hdo_state(hdo_data, electrometer_id=meter_id)
+                    except DipMaintenanceError as e:
+                        logger.warning(
+                            "[%s] %s for meter %s — skipping HDO this cycle",
+                            DIP_MAINTENANCE,
+                            e,
+                            meter_id,
+                        )
+                    except DipTokenError as e:
+                        logger.error(
+                            "[%s] Token acquisition failed for meter %s: %s — PND unaffected",
+                            HDO_TOKEN_ERROR,
+                            meter_id,
+                            e,
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "[%s] HDO fetch/parse/publish failed for meter %s: %s — PND unaffected",
+                            HDO_FETCH_ERROR,
+                            meter_id,
+                            e,
+                        )
+            else:
+                logger.warning(
+                    "[%s] No live browser context available for HDO — skipping HDO this cycle",
+                    HDO_FETCH_ERROR,
+                )
 
         cycle_duration = (datetime.now() - cycle_start).total_seconds()
         logger.info(

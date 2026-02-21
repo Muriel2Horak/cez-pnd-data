@@ -324,38 +324,6 @@ class PndFetcher:
         return data
 
 
-class PlaywrightHdoFetcher:
-    def __init__(self) -> None:
-        self._pw_cm: Any = None
-        self._browser: Any = None
-
-    async def _ensure_browser(self) -> None:
-        if self._browser is not None:
-            return
-        async_playwright = _get_async_playwright()
-        self._pw_cm = async_playwright()
-        pw = await self._pw_cm.__aenter__()
-        self._browser = await pw.chromium.launch(headless=True)
-
-    async def close(self) -> None:
-        if self._browser is not None:
-            await self._browser.close()
-            self._browser = None
-        if self._pw_cm is not None:
-            await self._pw_cm.__aexit__(None, None, None)
-            self._pw_cm = None
-
-    async def fetch(self, cookies: list, ean: str) -> dict:
-        await self._ensure_browser()
-        context = None
-        try:
-            context = await PndFetcher._create_browser_context(self._browser)
-            await context.add_cookies(cookies)
-            return await DipClient().fetch_hdo(context, ean)
-        finally:
-            if context is not None:
-                await context.close()
-
 
 class MQTTClientWrapper:
     """Wrapper for paho.mqtt.client to match expected interface."""
@@ -540,7 +508,6 @@ async def main():
     # These will be replaced inside the async with block
     pnd_fetcher = None
     hdo_fetcher = None
-    hdo_fetcher_instance: Optional[PlaywrightHdoFetcher] = None
 
     mqtt_publisher = MqttPublisher(
         mqtt_client,
@@ -555,15 +522,10 @@ async def main():
     )
 
     async def run_orchestrator_with_session():
-        nonlocal pnd_fetcher, hdo_fetcher, hdo_fetcher_instance
+        nonlocal pnd_fetcher, hdo_fetcher
 
         pnd_fetcher = PndFetcher().fetch
-        has_hdo_ean = any(
-            isinstance(e, dict) and e.get("ean")
-            for e in config["cez"].get("electrometers", [])
-        )
-        hdo_fetcher_instance = PlaywrightHdoFetcher() if has_hdo_ean else None
-        hdo_fetcher = hdo_fetcher_instance.fetch if hdo_fetcher_instance else None
+        hdo_fetcher = DipClient().fetch_hdo
 
         orchestrator = Orchestrator(
             config=orchestrator_config,
@@ -596,8 +558,6 @@ async def main():
     finally:
         # Clean shutdown
         logger.info("Shutting down...")
-        if hdo_fetcher_instance is not None:
-            await hdo_fetcher_instance.close()
         mqtt_publisher.stop()
 
 
