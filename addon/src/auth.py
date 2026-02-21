@@ -35,10 +35,10 @@ class AuthSession:
 
     @property
     def has_live_context(self) -> bool:
-        return self.context is not None and not self.context.closed
+        return self.context is not None and not self.context.closed  # type: ignore[attr-defined]
 
     async def close(self) -> None:
-        if self.context and not self.context.closed:
+        if self.context and not self.context.closed:  # type: ignore[attr-defined]
             await self.context.close()
         if self.browser and self.browser.is_connected():
             await self.browser.close()
@@ -64,7 +64,7 @@ class PlaywrightAuthClient:
         state = self._session_store.load()
         if state and not self._session_store.is_expired(state):
             live_context = self._session_store.get_live_context()
-            if live_context and not live_context.closed:
+            if live_context and not live_context.closed:  # type: ignore[attr-defined]
                 return AuthSession(
                     cookies=state.cookies,
                     reused=True,

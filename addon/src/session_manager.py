@@ -82,7 +82,7 @@ class SessionStore:
         self._live_browser = browser
 
     async def close_live_context(self) -> None:
-        if self._live_context and not self._live_context.closed:
+        if self._live_context and not self._live_context.closed:  # type: ignore[attr-defined]
             await self._live_context.close()
         if self._live_browser and self._live_browser.is_connected():
             await self._live_browser.close()

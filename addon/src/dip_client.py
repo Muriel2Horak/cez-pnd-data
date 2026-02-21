@@ -43,7 +43,7 @@ class DipClient:
                     "() => localStorage.getItem('dip-request-token') !== null",
                     timeout=self.DEFAULT_TIMEOUT,
                 )
-            except TimeoutError as exc:
+            except (TimeoutError, asyncio.TimeoutError) as exc:
                 raise DipTokenError(
                     "Token not found in localStorage — Angular may not have loaded"
                 ) from exc
