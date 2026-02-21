@@ -185,36 +185,56 @@ class Orchestrator:
             logger.info("No data available in CEZ response, skipping PND publish")
 
         if self._hdo_fetcher:
-            for electrometer in self._config.electrometers:
-                meter_id = electrometer.get("electrometer_id", "unknown")
-                ean = electrometer.get("ean", "")
-                if not ean:
-                    continue
+            hdo_session = session
+            if not hdo_session.has_live_context:
+                logger.warning("Context dead, forcing reauth for HDO fetch")
                 try:
-                    hdo_raw = await self._hdo_fetcher(cookies, ean)
-                    hdo_data = parse_hdo_signals(hdo_raw)
-                    self._mqtt.publish_hdo_state(hdo_data, electrometer_id=meter_id)
-                except DipMaintenanceError as e:
-                    logger.warning(
-                        "[%s] %s for meter %s — skipping HDO this cycle",
-                        DIP_MAINTENANCE,
-                        e,
-                        meter_id,
-                    )
-                except DipTokenError as e:
-                    logger.error(
-                        "[%s] Token acquisition failed for meter %s: %s — PND unaffected",
-                        HDO_TOKEN_ERROR,
-                        meter_id,
-                        e,
-                    )
+                    hdo_session = await self._auth.ensure_session()
                 except Exception as e:
                     logger.error(
-                        "[%s] HDO fetch/parse/publish failed for meter %s: %s — PND unaffected",
+                        "[%s] Re-auth for HDO failed: %s — skipping HDO this cycle",
                         HDO_FETCH_ERROR,
-                        meter_id,
                         e,
                     )
+                    hdo_session = None
+
+            if hdo_session is not None and hdo_session.has_live_context:
+                context = hdo_session.context
+                for electrometer in self._config.electrometers:
+                    meter_id = electrometer.get("electrometer_id", "unknown")
+                    ean = electrometer.get("ean", "")
+                    if not ean:
+                        continue
+                    try:
+                        hdo_raw = await self._hdo_fetcher(context, ean)
+                        hdo_data = parse_hdo_signals(hdo_raw)
+                        self._mqtt.publish_hdo_state(hdo_data, electrometer_id=meter_id)
+                    except DipMaintenanceError as e:
+                        logger.warning(
+                            "[%s] %s for meter %s — skipping HDO this cycle",
+                            DIP_MAINTENANCE,
+                            e,
+                            meter_id,
+                        )
+                    except DipTokenError as e:
+                        logger.error(
+                            "[%s] Token acquisition failed for meter %s: %s — PND unaffected",
+                            HDO_TOKEN_ERROR,
+                            meter_id,
+                            e,
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "[%s] HDO fetch/parse/publish failed for meter %s: %s — PND unaffected",
+                            HDO_FETCH_ERROR,
+                            meter_id,
+                            e,
+                        )
+            else:
+                logger.warning(
+                    "[%s] No live browser context available for HDO — skipping HDO this cycle",
+                    HDO_FETCH_ERROR,
+                )
 
         cycle_duration = (datetime.now() - cycle_start).total_seconds()
         logger.info(

@@ -5,7 +5,13 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from playwright.async_api import (  # type: ignore[import-not-found]
+        Browser,
+        BrowserContext,
+    )
 
 DEFAULT_OPTIONS_PATH = Path("/data/options.json")
 DEFAULT_SESSION_PATH = Path("/data/session_state.json")
@@ -62,6 +68,26 @@ class SessionStore:
     ) -> None:
         self._path = path or DEFAULT_SESSION_PATH
         self._ttl = ttl or DEFAULT_SESSION_TTL
+        self._live_context: BrowserContext | None = None
+        self._live_browser: Browser | None = None
+
+    def get_live_context(self) -> BrowserContext | None:
+        return self._live_context
+
+    def get_live_browser(self) -> Browser | None:
+        return self._live_browser
+
+    def set_live_context(self, context: BrowserContext, browser: Browser) -> None:
+        self._live_context = context
+        self._live_browser = browser
+
+    async def close_live_context(self) -> None:
+        if self._live_context and not self._live_context.closed:  # type: ignore[attr-defined]
+            await self._live_context.close()
+        if self._live_browser and self._live_browser.is_connected():
+            await self._live_browser.close()
+        self._live_context = None
+        self._live_browser = None
 
     @property
     def path(self) -> Path:

@@ -31,10 +31,13 @@ async def test_login_persists_cookies(tmp_path) -> None:
     creds = DummyCredentialsProvider()
 
     async def login_runner(_: Credentials):
-        return [
-            {"name": "JSESSIONID", "value": "abc", "expires": 0},
-            {"name": "TGC", "value": "def", "expires": 0},
-        ]
+        return AuthSession(
+            cookies=[
+                {"name": "JSESSIONID", "value": "abc", "expires": 0},
+                {"name": "TGC", "value": "def", "expires": 0},
+            ],
+            reused=False,
+        )
 
     client = PlaywrightAuthClient(creds, store, login_runner=login_runner)
     session = await client.ensure_session()
@@ -101,7 +104,10 @@ async def test_expired_session_triggers_login(tmp_path) -> None:
 
     async def login_runner(_: Credentials):
         called["count"] += 1
-        return [{"name": "DISSESSION", "value": "new", "expires": 0}]
+        return AuthSession(
+            cookies=[{"name": "DISSESSION", "value": "new", "expires": 0}],
+            reused=False,
+        )
 
     client = PlaywrightAuthClient(
         DummyCredentialsProvider(), store, login_runner=login_runner

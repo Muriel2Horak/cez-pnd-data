@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
-from .auth import DEFAULT_USER_AGENT
-
 DIP_PORTAL_URL = "https://dip.cezdistribuce.cz/irj/portal"
-TOKEN_PATH = "rest-auth-api?path=/token/get"
 SIGNALS_PATH_TEMPLATE = "prehled-om?path=supply-point-detail/signals/{ean}"
 
 
@@ -32,50 +30,64 @@ class DipClient:
         return content_type is not None and "text/html" in content_type.lower()
 
     async def fetch_hdo(self, context: Any, ean: str) -> dict[str, Any]:
+        page = await context.new_page()
         try:
-            token_resp = await context.request.get(
-                f"{DIP_PORTAL_URL}/{TOKEN_PATH}",
-                headers={"User-Agent": DEFAULT_USER_AGENT},
+            await page.goto(
+                f"{DIP_PORTAL_URL}/prehled-om",
+                wait_until="domcontentloaded",
                 timeout=self.DEFAULT_TIMEOUT,
             )
-            if token_resp.status in {400, 503}:
-                raise DipMaintenanceError(
-                    f"Token endpoint unavailable (HTTP {token_resp.status})"
-                )
-            if token_resp.status != 200:
-                raise DipTokenError(f"Token request failed: HTTP {token_resp.status}")
-            content_type = token_resp.headers.get("content-type", "")
-            if self._is_html_content_type(content_type):
-                raise DipMaintenanceError(
-                    "Token endpoint returned HTML (maintenance page)"
-                )
-            token_data = await token_resp.json()
-            if "token" not in token_data:
-                raise DipTokenError("Token missing from response")
-            token = token_data["token"]
 
-            signals_resp = await context.request.get(
-                f"{DIP_PORTAL_URL}/{SIGNALS_PATH_TEMPLATE.format(ean=ean)}",
-                headers={
-                    "User-Agent": DEFAULT_USER_AGENT,
-                    "x-request-token": token,
-                },
-                timeout=self.DEFAULT_TIMEOUT,
+            try:
+                await page.wait_for_function(
+                    "() => localStorage.getItem('dip-request-token') !== null",
+                    timeout=self.DEFAULT_TIMEOUT,
+                )
+            except (TimeoutError, asyncio.TimeoutError) as exc:
+                raise DipTokenError(
+                    "Token not found in localStorage — Angular may not have loaded"
+                ) from exc
+
+            token = await page.evaluate(
+                "() => localStorage.getItem('dip-request-token')"
             )
-            if signals_resp.status in {400, 503}:
+            if not token:
+                raise DipTokenError("Empty dip-request-token in localStorage")
+
+            result = await page.evaluate(
+                """async (args) => {
+                const resp = await fetch(args.url, {
+                    headers: {
+                        'X-Request-Token': args.token,
+                        'Accept': 'application/json, text/plain, */*'
+                    }
+                });
+                const contentType = resp.headers.get('content-type') || '';
+                const text = await resp.text();
+                return { status: resp.status, contentType: contentType, body: text };
+            }""",
+                {
+                    "url": f"{DIP_PORTAL_URL}/{SIGNALS_PATH_TEMPLATE.format(ean=ean)}",
+                    "token": token,
+                },
+            )
+
+            status = result["status"]
+            content_type = result["contentType"]
+            body = result["body"]
+
+            if status in (400, 503):
                 raise DipMaintenanceError(
-                    f"Signals endpoint unavailable (HTTP {signals_resp.status})"
+                    f"Signals endpoint unavailable (HTTP {status})"
                 )
-            if signals_resp.status != 200:
-                raise DipFetchError(
-                    f"Signals request failed: HTTP {signals_resp.status}"
-                )
-            content_type = signals_resp.headers.get("content-type", "")
+            if status != 200:
+                raise DipFetchError(f"Signals request failed: HTTP {status}")
             if self._is_html_content_type(content_type):
                 raise DipMaintenanceError(
                     "Signals endpoint returned HTML (maintenance page)"
                 )
-            data = await signals_resp.json()
+
+            data = json.loads(body)
             if "data" not in data:
                 raise DipFetchError("Data missing from response")
             return data["data"]
@@ -84,3 +96,5 @@ class DipClient:
             raise
         except (asyncio.TimeoutError, Exception) as exc:
             raise DipFetchError(f"Fetch failed: {exc}") from exc
+        finally:
+            await page.close()

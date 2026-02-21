@@ -15,7 +15,7 @@ import json
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
@@ -84,8 +84,8 @@ class TestFullPipelineSmoke:
             {"name": "JSESSIONID", "value": "smoke-test-session", "expires": 0}
         ]
 
-        async def fake_login(_: Credentials) -> list[dict[str, Any]]:
-            return fake_cookies
+        async def fake_login(_: Credentials) -> AuthSession:
+            return AuthSession(cookies=fake_cookies, reused=False)
 
         auth_client = PlaywrightAuthClient(creds, store, login_runner=fake_login)
         session = await auth_client.ensure_session()
@@ -285,9 +285,12 @@ class TestSessionPersistence:
 
         login_count = {"n": 0}
 
-        async def counting_login(_: Credentials) -> list[dict[str, Any]]:
+        async def counting_login(_: Credentials) -> AuthSession:
             login_count["n"] += 1
-            return [{"name": "JSESSIONID", "value": "test", "expires": 0}]
+            return AuthSession(
+                cookies=[{"name": "JSESSIONID", "value": "test", "expires": 0}],
+                reused=False,
+            )
 
         client = PlaywrightAuthClient(creds, store, login_runner=counting_login)
 
@@ -429,8 +432,8 @@ class TestFull17SensorPipeline:
 
         fake_cookies = [{"name": "JSESSIONID", "value": "e2e-17", "expires": 0}]
 
-        async def fake_login(_: Credentials) -> list[dict[str, Any]]:
-            return fake_cookies
+        async def fake_login(_: Credentials) -> AuthSession:
+            return AuthSession(cookies=fake_cookies, reused=False)
 
         auth_client = PlaywrightAuthClient(creds, store, login_runner=fake_login)
 
@@ -524,8 +527,15 @@ class TestFull17SensorPipeline:
 
         fake_cookies = [{"name": "JSESSIONID", "value": "e2e-hdo", "expires": 0}]
 
-        async def fake_login(_: Credentials) -> list[dict[str, Any]]:
-            return fake_cookies
+        def _make_mock_context() -> Mock:
+            ctx = Mock()
+            type(ctx).closed = property(lambda self: False)
+            return ctx
+
+        async def fake_login(_: Credentials) -> AuthSession:
+            return AuthSession(
+                cookies=fake_cookies, reused=False, context=_make_mock_context()
+            )
 
         auth_client = PlaywrightAuthClient(creds, store, login_runner=fake_login)
 
@@ -585,8 +595,15 @@ class TestFull17SensorPipeline:
 
         fake_cookies = [{"name": "JSESSIONID", "value": "e2e-full", "expires": 0}]
 
-        async def fake_login(_: Credentials) -> list[dict[str, Any]]:
-            return fake_cookies
+        def _make_mock_context() -> Mock:
+            ctx = Mock()
+            type(ctx).closed = property(lambda self: False)
+            return ctx
+
+        async def fake_login(_: Credentials) -> AuthSession:
+            return AuthSession(
+                cookies=fake_cookies, reused=False, context=_make_mock_context()
+            )
 
         auth_client = PlaywrightAuthClient(creds, store, login_runner=fake_login)
 

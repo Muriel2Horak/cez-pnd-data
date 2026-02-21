@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0
+
+- **Fix HDO DIP_MAINTENANCE false positive** — HDO sensors now publish real data instead of falsely reporting maintenance.
+- Rewrite `DipClient` to page-based fetch using `page.evaluate(fetch())` with `X-Request-Token` from localStorage.
+  - Old approach used `context.request.get()` which runs HTTP outside browser context → gets 401 Unauthorized.
+  - New approach executes fetch inside the authenticated browser page → proper session cookies and token.
+- Fix `BrowserContext.is_closed()` → `.closed` property across auth.py, session_manager.py, and mocks.
+- Auth lifecycle refactor: browser context persists after login for reuse by DipClient.
+- Orchestrator: pass authenticated context to HDO fetch, dead context detection with automatic re-auth.
+- Remove `PlaywrightHdoFetcher` wrapper — DipClient wired directly in main.py.
+- Add `auth_client.close()` to shutdown cleanup.
+- Handle Python 3.9/3.10 `asyncio.TimeoutError` compatibility (not a subclass of builtin `TimeoutError` before 3.11).
+
 ## 0.2.0
 
 - **BREAKING: Playwright-only PND Runtime Migration** - Removed HTTP PND client path entirely; PND data now fetched exclusively via Playwright browser automation with WAF warmup flow.

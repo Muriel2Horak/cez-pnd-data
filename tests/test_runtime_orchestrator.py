@@ -142,6 +142,24 @@ class TestOrchestratorConfig:
         config = _make_config()
         assert config.ean == "85912345678901"
 
+    def test_empty_electrometers_meter_id_returns_unknown(self) -> None:
+        config = OrchestratorConfig(
+            electrometers=[],
+            poll_interval_seconds=900,
+            max_retries=3,
+            email="test@example.com",
+        )
+        assert config.meter_id == "unknown"
+
+    def test_empty_electrometers_ean_returns_empty_string(self) -> None:
+        config = OrchestratorConfig(
+            electrometers=[],
+            poll_interval_seconds=900,
+            max_retries=3,
+            email="test@example.com",
+        )
+        assert config.ean == ""
+
 
 # ===========================================================================
 # 2. Single fetch cycle (happy path)
@@ -1295,3 +1313,105 @@ class TestHdoIntegration:
     async def test_hdo_sentinel_is_defined(self) -> None:
         assert isinstance(HDO_FETCH_ERROR, str)
         assert HDO_FETCH_ERROR == "HDO_FETCH_ERROR"
+
+    @pytest.mark.asyncio
+    async def test_hdo_triggers_reauth_when_context_is_dead(self) -> None:
+        from unittest.mock import Mock
+
+        dead_session = MagicMock(cookies=[{"name": "x"}], reused=False)
+        dead_session.has_live_context = False
+
+        live_context = Mock()
+        type(live_context).closed = property(lambda self: False)
+        live_session = MagicMock(cookies=[{"name": "x"}], reused=False)
+        live_session.has_live_context = True
+        live_session.context = live_context
+
+        auth = FakeAuthClient()
+        auth.ensure_session = AsyncMock(side_effect=[dead_session, live_session])
+
+        fetcher = MultiAssemblyFetcher()
+        mqtt = FakeMqttPublisher()
+        hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
+        config = _make_config(
+            electrometers=[{"electrometer_id": "784703", "ean": "859182400100000001"}]
+        )
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+            hdo_fetcher=hdo_fetcher,
+        )
+
+        await orch.run_once()
+
+        assert auth.ensure_session.await_count == 2
+        mqtt.publish_hdo_state.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_hdo_skipped_when_reauth_fails(self, caplog) -> None:
+        dead_session = MagicMock(cookies=[{"name": "x"}], reused=False)
+        dead_session.has_live_context = False
+
+        auth = FakeAuthClient()
+        auth.ensure_session = AsyncMock(
+            side_effect=[dead_session, Exception("Reauth failed")]
+        )
+
+        fetcher = MultiAssemblyFetcher()
+        mqtt = FakeMqttPublisher()
+        hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
+        config = _make_config(
+            electrometers=[{"electrometer_id": "784703", "ean": "859182400100000001"}]
+        )
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+            hdo_fetcher=hdo_fetcher,
+        )
+
+        with caplog.at_level(logging.ERROR):
+            await orch.run_once()
+
+        mqtt.publish_hdo_state.assert_not_called()
+        assert any("HDO" in record.message for record in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_hdo_skipped_when_reauth_returns_dead_context(self, caplog) -> None:
+        dead_session = MagicMock(cookies=[{"name": "x"}], reused=False)
+        dead_session.has_live_context = False
+
+        dead_session2 = MagicMock(cookies=[{"name": "x"}], reused=False)
+        dead_session2.has_live_context = False
+
+        auth = FakeAuthClient()
+        auth.ensure_session = AsyncMock(side_effect=[dead_session, dead_session2])
+
+        fetcher = MultiAssemblyFetcher()
+        mqtt = FakeMqttPublisher()
+        hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
+        config = _make_config(
+            electrometers=[{"electrometer_id": "784703", "ean": "859182400100000001"}]
+        )
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+            hdo_fetcher=hdo_fetcher,
+        )
+
+        with caplog.at_level(logging.WARNING):
+            await orch.run_once()
+
+        mqtt.publish_hdo_state.assert_not_called()
+        hdo_fetcher.assert_not_awaited()
+        assert any(
+            "No live browser context" in record.message for record in caplog.records
+        )

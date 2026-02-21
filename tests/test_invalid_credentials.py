@@ -11,12 +11,11 @@ from __future__ import annotations
 import json
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
-from addon.src.auth import PlaywrightAuthClient
+from addon.src.auth import AuthSession, PlaywrightAuthClient
 from addon.src.mqtt_publisher import MqttPublisher
 from addon.src.session_manager import Credentials, CredentialsProvider, SessionStore
 
@@ -50,7 +49,7 @@ class TestInvalidCredentials:
         store = SessionStore(path=session_path, ttl=timedelta(hours=6))
         creds = DummyCredentialsProvider()
 
-        async def failing_login(_: Credentials) -> list[dict[str, Any]]:
+        async def failing_login(_: Credentials) -> AuthSession:
             raise AuthError("Invalid username or password")
 
         client = PlaywrightAuthClient(creds, store, login_runner=failing_login)
@@ -71,7 +70,7 @@ class TestInvalidCredentials:
         store = SessionStore(path=session_path, ttl=timedelta(hours=6))
         creds = DummyCredentialsProvider()
 
-        async def failing_login(_: Credentials) -> list[dict[str, Any]]:
+        async def failing_login(_: Credentials) -> AuthSession:
             raise AuthError("Login failed: bad credentials")
 
         client = PlaywrightAuthClient(creds, store, login_runner=failing_login)
@@ -110,7 +109,7 @@ class TestInvalidCredentials:
         store = SessionStore(path=session_path, ttl=timedelta(hours=6))
         creds = DummyCredentialsProvider()
 
-        async def failing_login(_: Credentials) -> list[dict[str, Any]]:
+        async def failing_login(_: Credentials) -> AuthSession:
             raise AuthError("CEZ login failed: invalid credentials for bad@example.com")
 
         client = PlaywrightAuthClient(creds, store, login_runner=failing_login)
@@ -142,7 +141,7 @@ class TestMissingCredentials:
         session_path = tmp_path / "session.json"
         store = SessionStore(path=session_path, ttl=timedelta(hours=6))
 
-        async def should_not_be_called(_: Credentials) -> list[dict[str, Any]]:
+        async def should_not_be_called(_: Credentials) -> AuthSession:
             raise AssertionError("Login runner should not be called")
 
         client = PlaywrightAuthClient(creds, store, login_runner=should_not_be_called)
@@ -160,7 +159,7 @@ class TestMissingCredentials:
         session_path = tmp_path / "session.json"
         store = SessionStore(path=session_path, ttl=timedelta(hours=6))
 
-        async def should_not_be_called(_: Credentials) -> list[dict[str, Any]]:
+        async def should_not_be_called(_: Credentials) -> AuthSession:
             raise AssertionError("Login runner should not be called")
 
         client = PlaywrightAuthClient(creds, store, login_runner=should_not_be_called)
@@ -199,7 +198,7 @@ class TestStaleSessionProtection:
 
         creds = DummyCredentialsProvider()
 
-        async def failing_reauth(_: Credentials) -> list[dict[str, Any]]:
+        async def failing_reauth(_: Credentials) -> AuthSession:
             raise AuthError("Session expired, re-auth failed")
 
         client = PlaywrightAuthClient(creds, store, login_runner=failing_reauth)
