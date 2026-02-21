@@ -52,6 +52,8 @@ async def test_login_persists_cookies(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_restore_session_avoids_login(tmp_path) -> None:
+    from unittest.mock import MagicMock
+
     session_path = tmp_path / "session.json"
     store = SessionStore(path=session_path, ttl=timedelta(hours=6))
     now = datetime.now(tz=timezone.utc)
@@ -72,6 +74,12 @@ async def test_restore_session_avoids_login(tmp_path) -> None:
         encoding="utf-8",
     )
 
+    mock_context = MagicMock()
+    mock_context.closed = False
+    mock_browser = MagicMock()
+    mock_browser.is_connected.return_value = True
+    store.set_live_context(mock_context, mock_browser)
+
     async def login_runner(_: Credentials):
         raise AssertionError("login should not be called")
 
@@ -82,6 +90,48 @@ async def test_restore_session_avoids_login(tmp_path) -> None:
 
     assert session.reused is True
     assert session.cookies[0]["name"] == "JSESSIONID"
+    assert session.has_live_context is True
+
+
+@pytest.mark.asyncio
+async def test_valid_session_no_context_triggers_login(tmp_path) -> None:
+    session_path = tmp_path / "session.json"
+    store = SessionStore(path=session_path, ttl=timedelta(hours=6))
+    now = datetime.now(tz=timezone.utc)
+    state = SessionState(
+        cookies=[{"name": "JSESSIONID", "value": "old", "expires": 0}],
+        created_at=now,
+        expires_at=now + timedelta(hours=1),
+    )
+    expires_at = state.expires_at or now + timedelta(hours=1)
+    session_path.write_text(
+        json.dumps(
+            {
+                "cookies": state.cookies,
+                "created_at": state.created_at.isoformat(),
+                "expires_at": expires_at.isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    called = {"count": 0}
+
+    async def login_runner(_: Credentials):
+        called["count"] += 1
+        return AuthSession(
+            cookies=[{"name": "JSESSIONID", "value": "new", "expires": 0}],
+            reused=False,
+        )
+
+    client = PlaywrightAuthClient(
+        DummyCredentialsProvider(), store, login_runner=login_runner
+    )
+    session = await client.ensure_session()
+
+    assert called["count"] == 1
+    assert session.reused is False
+    assert session.cookies[0]["value"] == "new"
 
 
 @pytest.mark.asyncio

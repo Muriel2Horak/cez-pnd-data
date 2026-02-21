@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1
+
+- **Fix HDO session lifecycle bug** — `ensure_session()` now triggers re-login when session cookies are valid but no live browser context exists (fresh process start). Previously returned cookies-only session, causing HDO to silently fail with `[HDO_FETCH_ERROR] No live browser context available for HDO`.
+
 ## 0.4.0
 
 - **Fix HDO DIP_MAINTENANCE false positive** — HDO sensors now publish real data instead of falsely reporting maintenance.

@@ -71,7 +71,9 @@ class PlaywrightAuthClient:
                     context=live_context,
                     browser=self._session_store.get_live_browser(),
                 )
-            return AuthSession(cookies=state.cookies, reused=True)
+            logger.info(
+                "Session valid but no live browser context — re-login needed for HDO"
+            )
         await self._session_store.close_live_context()
         credentials = self._credentials_provider.get_credentials()
         session = await self._login_runner(credentials)
