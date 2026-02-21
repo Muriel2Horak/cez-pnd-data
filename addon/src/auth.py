@@ -13,6 +13,7 @@ from .session_manager import (
     CredentialsProvider,
     SessionStore,
 )
+
 logger = logging.getLogger(__name__)
 
 PND_BASE_URL = "https://pnd.cezdistribuce.cz/cezpnd2"
@@ -52,9 +53,7 @@ class PlaywrightAuthClient:
         self,
         credentials_provider: CredentialsProvider,
         session_store: SessionStore,
-        login_runner: (
-            Callable[[Credentials], Awaitable[AuthSession]] | None
-        ) = None,
+        login_runner: Callable[[Credentials], Awaitable[AuthSession]] | None = None,
     ) -> None:
         self._credentials_provider = credentials_provider
         self._session_store = session_store
@@ -66,7 +65,12 @@ class PlaywrightAuthClient:
         if state and not self._session_store.is_expired(state):
             live_context = self._session_store.get_live_context()
             if live_context and not live_context.closed:
-                return AuthSession(cookies=state.cookies, reused=True, context=live_context)
+                return AuthSession(
+                    cookies=state.cookies,
+                    reused=True,
+                    context=live_context,
+                    browser=self._session_store.get_live_browser(),
+                )
             return AuthSession(cookies=state.cookies, reused=True)
         await self._session_store.close_live_context()
         credentials = self._credentials_provider.get_credentials()
@@ -80,9 +84,7 @@ class PlaywrightAuthClient:
             await self._playwright.stop()
             self._playwright = None
 
-    async def _login_via_playwright(
-        self, credentials: Credentials
-    ) -> AuthSession:
+    async def _login_via_playwright(self, credentials: Credentials) -> AuthSession:
         from playwright.async_api import (  # type: ignore[import-not-found]
             async_playwright,
         )

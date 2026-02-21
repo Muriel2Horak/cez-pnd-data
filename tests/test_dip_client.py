@@ -70,6 +70,7 @@ async def test_fetch_hdo_returns_data_field():
     result = await DipClient().fetch_hdo(context, ean="123")
 
     assert result == expected_data
+    page.close.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -77,9 +78,7 @@ async def test_fetch_hdo_token_not_found_in_local_storage():
     page = _mock_page(wait_for_function_error=asyncio.TimeoutError())
     context = _mock_context(page)
 
-    with pytest.raises(
-        DipTokenError, match="Token not found in localStorage"
-    ):
+    with pytest.raises(DipTokenError, match="Token not found in localStorage"):
         await DipClient().fetch_hdo(context, ean="123")
 
     page.close.assert_called_once()
@@ -108,6 +107,8 @@ async def test_fetch_hdo_raises_maintenance_on_400():
     ):
         await DipClient().fetch_hdo(context, ean="123")
 
+    page.close.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_fetch_hdo_raises_maintenance_on_503():
@@ -121,6 +122,8 @@ async def test_fetch_hdo_raises_maintenance_on_503():
     ):
         await DipClient().fetch_hdo(context, ean="123")
 
+    page.close.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_fetch_hdo_raises_fetch_error_on_500():
@@ -131,6 +134,8 @@ async def test_fetch_hdo_raises_fetch_error_on_500():
 
     with pytest.raises(DipFetchError, match="Signals request failed: HTTP 500"):
         await DipClient().fetch_hdo(context, ean="123")
+
+    page.close.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -144,10 +149,10 @@ async def test_fetch_hdo_raises_maintenance_on_html_content():
     )
     context = _mock_context(page)
 
-    with pytest.raises(
-        DipMaintenanceError, match="Signals endpoint returned HTML"
-    ):
+    with pytest.raises(DipMaintenanceError, match="Signals endpoint returned HTML"):
         await DipClient().fetch_hdo(context, ean="123")
+
+    page.close.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -163,6 +168,8 @@ async def test_fetch_hdo_raises_fetch_error_on_missing_data_key():
 
     with pytest.raises(DipFetchError, match="Data missing from response"):
         await DipClient().fetch_hdo(context, ean="123")
+
+    page.close.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -222,6 +229,7 @@ async def test_fetch_hdo_correct_url_construction():
     args = fetch_call.args[1]
     assert "8591234567890" in args["url"]
     assert "signals/8591234567890" in args["url"]
+    page.close.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -235,6 +243,7 @@ async def test_fetch_hdo_token_used_in_fetch():
     fetch_call = [c for c in evaluate_calls if len(c.args) > 1][0]
     args = fetch_call.args[1]
     assert args["token"] == "secret-token-xyz"
+    page.close.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -257,6 +266,7 @@ async def test_fetch_hdo_preserves_return_format():
     result = await DipClient().fetch_hdo(context, ean="123")
 
     assert result == expected_data
+    page.close.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -269,6 +279,7 @@ async def test_fetch_hdo_navigates_to_dip_portal():
     page.goto.assert_called_once()
     call_args = page.goto.call_args
     assert "dip.cezdistribuce.cz/irj/portal/prehled-om" in call_args[0][0]
+    page.close.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -281,6 +292,7 @@ async def test_fetch_hdo_waits_for_token_in_local_storage():
     page.wait_for_function.assert_called_once()
     call_args = page.wait_for_function.call_args
     assert "localStorage.getItem('dip-request-token')" in call_args[0][0]
+    page.close.assert_called_once()
 
 
 def test_is_html_content_type_detects_html():

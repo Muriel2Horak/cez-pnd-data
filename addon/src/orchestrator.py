@@ -188,20 +188,21 @@ class Orchestrator:
             logger.info("No data available in CEZ response, skipping PND publish")
 
         if self._hdo_fetcher:
-            if not session.has_live_context:
+            hdo_session = session
+            if not hdo_session.has_live_context:
                 logger.warning("Context dead, forcing reauth for HDO fetch")
                 try:
-                    session = await self._auth.ensure_session()
+                    hdo_session = await self._auth.ensure_session()
                 except Exception as e:
                     logger.error(
                         "[%s] Re-auth for HDO failed: %s — skipping HDO this cycle",
                         HDO_FETCH_ERROR,
                         e,
                     )
-                    session = None  # type: ignore[assignment]
+                    hdo_session = None
 
-            if session is not None and session.has_live_context:
-                context = session.context
+            if hdo_session is not None and hdo_session.has_live_context:
+                context = hdo_session.context
                 for electrometer in self._config.electrometers:
                     meter_id = electrometer.get("electrometer_id", "unknown")
                     ean = electrometer.get("ean", "")

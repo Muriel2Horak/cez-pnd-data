@@ -533,7 +533,9 @@ class TestFull17SensorPipeline:
             return ctx
 
         async def fake_login(_: Credentials) -> AuthSession:
-            return AuthSession(cookies=fake_cookies, reused=False, context=_make_mock_context())
+            return AuthSession(
+                cookies=fake_cookies, reused=False, context=_make_mock_context()
+            )
 
         auth_client = PlaywrightAuthClient(creds, store, login_runner=fake_login)
 
@@ -599,7 +601,9 @@ class TestFull17SensorPipeline:
             return ctx
 
         async def fake_login(_: Credentials) -> AuthSession:
-            return AuthSession(cookies=fake_cookies, reused=False, context=_make_mock_context())
+            return AuthSession(
+                cookies=fake_cookies, reused=False, context=_make_mock_context()
+            )
 
         auth_client = PlaywrightAuthClient(creds, store, login_runner=fake_login)
 

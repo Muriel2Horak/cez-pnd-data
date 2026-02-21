@@ -71,6 +71,9 @@ class SessionStore:
     def get_live_context(self) -> BrowserContext | None:
         return self._live_context
 
+    def get_live_browser(self) -> Browser | None:
+        return self._live_browser
+
     def set_live_context(self, context: BrowserContext, browser: Browser) -> None:
         self._live_context = context
         self._live_browser = browser

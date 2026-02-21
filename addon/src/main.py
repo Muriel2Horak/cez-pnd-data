@@ -324,7 +324,6 @@ class PndFetcher:
         return data
 
 
-
 class MQTTClientWrapper:
     """Wrapper for paho.mqtt.client to match expected interface."""
 
@@ -558,6 +557,7 @@ async def main():
     finally:
         # Clean shutdown
         logger.info("Shutting down...")
+        await auth_client.close()
         mqtt_publisher.stop()
 
 

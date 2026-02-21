@@ -43,12 +43,14 @@ class DipClient:
                     "() => localStorage.getItem('dip-request-token') !== null",
                     timeout=self.DEFAULT_TIMEOUT,
                 )
-            except Exception as exc:
+            except TimeoutError as exc:
                 raise DipTokenError(
                     "Token not found in localStorage — Angular may not have loaded"
                 ) from exc
 
-            token = await page.evaluate("() => localStorage.getItem('dip-request-token')")
+            token = await page.evaluate(
+                "() => localStorage.getItem('dip-request-token')"
+            )
             if not token:
                 raise DipTokenError("Empty dip-request-token in localStorage")
 
