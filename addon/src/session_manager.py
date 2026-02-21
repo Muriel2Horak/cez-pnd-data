@@ -82,8 +82,12 @@ class SessionStore:
         self._live_browser = browser
 
     async def close_live_context(self) -> None:
-        if self._live_context and not self._live_context.closed:  # type: ignore[attr-defined]
-            await self._live_context.close()
+        # Playwright BrowserContext has no .closed property; use try/except
+        if self._live_context:
+            try:
+                await self._live_context.close()
+            except Exception:
+                pass  # Already closed
         if self._live_browser and self._live_browser.is_connected():
             await self._live_browser.close()
         self._live_context = None

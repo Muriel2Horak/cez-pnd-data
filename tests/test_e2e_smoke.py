@@ -279,6 +279,8 @@ class TestSessionPersistence:
 
     @pytest.mark.asyncio
     async def test_second_cycle_reuses_session(self, tmp_path: Path) -> None:
+        from unittest.mock import MagicMock
+
         session_path = tmp_path / "session.json"
         store = SessionStore(path=session_path, ttl=timedelta(hours=6))
         creds = DummyCredentialsProvider()
@@ -287,9 +289,16 @@ class TestSessionPersistence:
 
         async def counting_login(_: Credentials) -> AuthSession:
             login_count["n"] += 1
+            mock_context = MagicMock()
+            mock_context.closed = False
+            mock_browser = MagicMock()
+            mock_browser.is_connected.return_value = True
+            store.set_live_context(mock_context, mock_browser)
             return AuthSession(
                 cookies=[{"name": "JSESSIONID", "value": "test", "expires": 0}],
                 reused=False,
+                context=mock_context,
+                browser=mock_browser,
             )
 
         client = PlaywrightAuthClient(creds, store, login_runner=counting_login)
@@ -527,14 +536,13 @@ class TestFull17SensorPipeline:
 
         fake_cookies = [{"name": "JSESSIONID", "value": "e2e-hdo", "expires": 0}]
 
-        def _make_mock_context() -> Mock:
-            ctx = Mock()
-            type(ctx).closed = property(lambda self: False)
-            return ctx
-
         async def fake_login(_: Credentials) -> AuthSession:
+            mock_context = MagicMock()
+            mock_browser = MagicMock()
+            mock_browser.is_connected.return_value = True
+            store.set_live_context(mock_context, mock_browser)
             return AuthSession(
-                cookies=fake_cookies, reused=False, context=_make_mock_context()
+                cookies=fake_cookies, reused=False, context=mock_context, browser=mock_browser
             )
 
         auth_client = PlaywrightAuthClient(creds, store, login_runner=fake_login)
@@ -595,14 +603,13 @@ class TestFull17SensorPipeline:
 
         fake_cookies = [{"name": "JSESSIONID", "value": "e2e-full", "expires": 0}]
 
-        def _make_mock_context() -> Mock:
-            ctx = Mock()
-            type(ctx).closed = property(lambda self: False)
-            return ctx
-
         async def fake_login(_: Credentials) -> AuthSession:
+            mock_context = MagicMock()
+            mock_browser = MagicMock()
+            mock_browser.is_connected.return_value = True
+            store.set_live_context(mock_context, mock_browser)
             return AuthSession(
-                cookies=fake_cookies, reused=False, context=_make_mock_context()
+                cookies=fake_cookies, reused=False, context=mock_context, browser=mock_browser
             )
 
         auth_client = PlaywrightAuthClient(creds, store, login_runner=fake_login)
