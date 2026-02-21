@@ -208,6 +208,12 @@ class TestFindNextSwitch:
         result = _find_next_switch(now, self.SCHEDULE)
         assert result == datetime(2026, 2, 15, 8, 0)
 
+    def test_empty_schedule_returns_next_day_midnight(self) -> None:
+        """When schedule is empty (no valid slots), return next day at midnight."""
+        now = datetime(2026, 2, 15, 10, 0)
+        result = _find_next_switch(now, [])
+        assert result == datetime(2026, 2, 16, 0, 0)
+
 
 # ── Full parse_hdo_signals ────────────────────────────────────────────
 

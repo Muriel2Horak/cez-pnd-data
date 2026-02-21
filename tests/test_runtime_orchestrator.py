@@ -142,6 +142,24 @@ class TestOrchestratorConfig:
         config = _make_config()
         assert config.ean == "85912345678901"
 
+    def test_empty_electrometers_meter_id_returns_unknown(self) -> None:
+        config = OrchestratorConfig(
+            electrometers=[],
+            poll_interval_seconds=900,
+            max_retries=3,
+            email="test@example.com",
+        )
+        assert config.meter_id == "unknown"
+
+    def test_empty_electrometers_ean_returns_empty_string(self) -> None:
+        config = OrchestratorConfig(
+            electrometers=[],
+            poll_interval_seconds=900,
+            max_retries=3,
+            email="test@example.com",
+        )
+        assert config.ean == ""
+
 
 # ===========================================================================
 # 2. Single fetch cycle (happy path)
