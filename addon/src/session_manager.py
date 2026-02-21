@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from playwright.async_api import Browser, BrowserContext  # type: ignore[import-not-found]
+    from playwright.async_api import (  # type: ignore[import-not-found]
+        Browser,
+        BrowserContext,
+    )
 
 DEFAULT_OPTIONS_PATH = Path("/data/options.json")
 DEFAULT_SESSION_PATH = Path("/data/session_state.json")
