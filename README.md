@@ -434,6 +434,20 @@ Vytvoření → Testování → Zachycení evidence → Smazání
 
 Nikdy necommitujte debug skripty do hlavní větve. Výsledky zachyťte jako evidence v `evidence/`.
 
+## Více odběrných míst a elektroměrů
+
+Integrace podporuje **více než jedno odběrné místo** (delivery point) a **více elektroměrů**
+s vazbou každého elektroměru na konkrétní odběrné místo.
+
+- Každé odběrné místo je identifikováno svým EAN a může mít přiřazen jeden či více elektroměrů.
+- Hodnoty z jednotlivých elektroměrů jsou agregovány na úroveň odběrného místa a zároveň
+  zůstávají dostupné per-elektroměr pro detailní evidenci.
+- Konfigurace umožňuje sledovat dvě odběrná místa současně (např. domácnost + fotovoltaika)
+  v rámci jedné instance integrace.
+
+> Změnový požadavek CPI-10 — rozšíření integrace na 2 odběrná místa a podporu více elektroměrů
+> s vazbou na odběrné místo.
+
 ## Licence
 
 MIT
