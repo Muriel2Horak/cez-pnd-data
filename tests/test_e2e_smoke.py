@@ -655,3 +655,73 @@ class TestFull17SensorPipeline:
         assert all_expected_topics.issubset(
             published_topics
         ), f"Missing topics: {all_expected_topics - published_topics}"
+
+    @pytest.mark.asyncio
+    async def test_full_pipeline_publishes_17_sensors_for_two_meters(
+        self, tmp_path: Path, mock_mqtt_client: MagicMock
+    ) -> None:
+        session_path = tmp_path / "session.json"
+        store = SessionStore(path=session_path, ttl=timedelta(hours=6))
+        creds = DummyCredentialsProvider()
+
+        fake_cookies = [{"name": "JSESSIONID", "value": "e2e-two", "expires": 0}]
+
+        async def fake_login(_: Credentials) -> AuthSession:
+            mock_context = MagicMock()
+            mock_browser = MagicMock()
+            mock_browser.is_connected.return_value = True
+            store.set_live_context(mock_context, mock_browser)
+            return AuthSession(
+                cookies=fake_cookies, reused=False, context=mock_context, browser=mock_browser
+            )
+
+        auth_client = PlaywrightAuthClient(creds, store, login_runner=fake_login)
+
+        async def mock_fetcher(cookies: Any, **kwargs: Any) -> dict:
+            assembly_id = kwargs.get("assembly_id", 0)
+            return _ASSEMBLY_PAYLOADS.get(
+                assembly_id, {"hasData": False, "columns": [], "values": []}
+            )
+
+        hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
+
+        electrometers = [
+            {"electrometer_id": "784703", "ean": "859182400100000001"},
+            {"electrometer_id": "784704", "ean": "859182400100000002"},
+        ]
+        publisher = MqttPublisher(client=mock_mqtt_client, electrometers=electrometers)
+
+        config = OrchestratorConfig(
+            electrometers=electrometers,
+            poll_interval_seconds=900,
+        )
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth_client,
+            fetcher=mock_fetcher,
+            mqtt_publisher=publisher,
+            hdo_fetcher=hdo_fetcher,
+        )
+
+        publisher.start()
+        publisher.publish_discovery()
+        mock_mqtt_client.publish.reset_mock()
+
+        await orch.run_once()
+
+        pnd_keys = [sensor.key for sensor in get_sensor_definitions()]
+        hdo_keys = [sensor.key for sensor in get_hdo_sensor_definitions()]
+        published_topics = {call[0][0] for call in mock_mqtt_client.publish.call_args_list}
+
+        for meter in electrometers:
+            meter_id = meter["electrometer_id"]
+            for key in pnd_keys + hdo_keys:
+                expected_topic = STATE_TOPIC_TEMPLATE.format(
+                    electrometer_id=meter_id, key=key
+                )
+                assert expected_topic in published_topics, f"Missing {expected_topic}"
+
+        assert [call.args[1] for call in hdo_fetcher.await_args_list] == [
+            "859182400100000001",
+            "859182400100000002",
+        ]
