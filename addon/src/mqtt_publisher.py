@@ -293,6 +293,8 @@ class MqttPublisher:
 
         if electrometers is not None:
             self._electrometers = list(electrometers)
+            if not self._electrometers:
+                raise ValueError("MqttPublisher requires at least one electrometer")
         elif electrometer_id is not None:
             entry: dict[str, str] = {"electrometer_id": electrometer_id}
             if ean:

@@ -1,6 +1,6 @@
 import pytest
 
-from addon.src.main import validate_electrometers_config
+from addon.src.main import create_config, validate_electrometers_config
 
 
 class TestConfigValidation:
@@ -131,3 +131,30 @@ class TestConfigValidation:
         assert len(result) == 1
         assert result[0]["electrometer_id"] == "784703"
         assert result[0]["ean"] == "85912345678901"
+
+    def test_multi_electrometer_requires_ean(self):
+        """Multi-electrometer JSON requires EAN for every configured OM."""
+        missing_ean_config = '[{"electrometer_id": "784703", "ean": ""}]'
+
+        with pytest.raises(ValueError) as exc_info:
+            validate_electrometers_config(missing_ean_config)
+
+        error_msg = str(exc_info.value)
+        assert "empty or invalid" in error_msg.lower()
+        assert "ean" in error_msg
+
+    def test_create_config_exits_when_no_electrometer_is_configured(
+        self, monkeypatch
+    ):
+        """Startup config fails before MQTT publisher can crash on an empty meter list."""
+        monkeypatch.setenv("CEZ_EMAIL", "test@example.com")
+        monkeypatch.setenv("CEZ_PASSWORD", "secret")
+        monkeypatch.setenv("MQTT_HOST", "mqtt.local")
+        monkeypatch.delenv("CEZ_ELECTROMETERS", raising=False)
+        monkeypatch.delenv("CEZ_ELECTROMETER_ID", raising=False)
+        monkeypatch.delenv("CEZ_EAN", raising=False)
+
+        with pytest.raises(SystemExit) as exc_info:
+            create_config()
+
+        assert exc_info.value.code == 1

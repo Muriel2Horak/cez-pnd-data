@@ -912,3 +912,9 @@ class TestMultiElectrometerPublisher:
     ) -> None:
         with pytest.raises(TypeError, match="requires either"):
             MqttPublisher(client=mock_mqtt_client)
+
+    def test_constructor_rejects_empty_electrometers_list(
+        self, mock_mqtt_client: MagicMock
+    ) -> None:
+        with pytest.raises(ValueError, match="at least one electrometer"):
+            MqttPublisher(client=mock_mqtt_client, electrometers=[])

@@ -447,8 +447,10 @@ def create_config() -> Dict[str, Dict[str, Any]]:
                     {"electrometer_id": electrometer_id, "ean": ""}
                 ]
             else:
-                # No electrometers configured - this should fail validation elsewhere
-                config["cez"]["electrometers"] = []
+                logger.error(
+                    "No electrometer configured. Set CEZ_ELECTROMETERS or CEZ_ELECTROMETER_ID."
+                )
+                sys.exit(1)
 
     except ValueError as e:
         logger.error(f"Invalid electrometers configuration: {e}")
