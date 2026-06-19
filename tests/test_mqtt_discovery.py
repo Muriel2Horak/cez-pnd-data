@@ -10,6 +10,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -864,6 +865,29 @@ class TestMultiElectrometerPublisher:
         ]
         topics = [c[0][0] for c in state_calls]
         assert all("784703" in t for t in topics)
+
+    def test_unknown_nested_meter_state_is_not_treated_as_legacy_flat_state(
+        self,
+        mock_mqtt_client: MagicMock,
+        multi_meter_publisher_configs: list[dict[str, str]],
+        caplog: Any,
+    ) -> None:
+        publisher = MqttPublisher(
+            client=mock_mqtt_client,
+            electrometers=multi_meter_publisher_configs,
+        )
+
+        with caplog.at_level(logging.WARNING):
+            publisher.publish_state({"999999": {"consumption": 9.9}})
+
+        state_calls = [
+            c for c in mock_mqtt_client.publish.call_args_list if "/state" in c[0][0]
+        ]
+        assert state_calls == []
+        assert any(
+            "unknown electrometer_id" in record.message.lower()
+            for record in caplog.records
+        )
 
     def test_discovery_payloads_include_ean_context(
         self,

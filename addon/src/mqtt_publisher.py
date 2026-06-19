@@ -385,16 +385,31 @@ class MqttPublisher:
         per-meter ``{meter_id: {key: val}}`` format.
         """
         known_ids = {e["electrometer_id"] for e in self._electrometers}
-        is_per_meter = any(k in known_ids for k in readings)
+        has_nested_values = any(
+            isinstance(value, Mapping) for value in readings.values()
+        )
 
-        if is_per_meter:
+        if has_nested_values:
+            unknown_ids = set(readings.keys()) - known_ids
+            for unknown_id in sorted(unknown_ids):
+                logger.warning(
+                    "Ignoring state for unknown electrometer_id: %s", unknown_id
+                )
+
             for elec in self._electrometers:
                 meter_id = elec["electrometer_id"]
                 meter_readings = readings.get(meter_id, {})
+                if not isinstance(meter_readings, Mapping):
+                    logger.warning(
+                        "Ignoring non-mapping state payload for electrometer_id: %s",
+                        meter_id,
+                    )
+                    continue
                 self._publish_readings_for_meter(meter_id, meter_readings)
-        else:
-            first_meter = self._electrometers[0]["electrometer_id"]
-            self._publish_readings_for_meter(first_meter, readings)
+            return
+
+        first_meter = self._electrometers[0]["electrometer_id"]
+        self._publish_readings_for_meter(first_meter, readings)
 
     def _publish_readings_for_meter(
         self, meter_id: str, readings: Mapping[str, float | None]
