@@ -46,6 +46,26 @@ def _make_reading_dict(consumption: float = 1.42) -> dict[str, Any]:
     }
 
 
+def _profile_payload_for_meter(meter_id: str, consumption: float) -> dict[str, Any]:
+    return {
+        "hasData": True,
+        "columns": [
+            {"id": "1000", "name": "Datum", "unit": None},
+            {"id": "1001", "name": f"+A/{meter_id}", "unit": "kW"},
+            {"id": "1002", "name": f"-A/{meter_id}", "unit": "kW"},
+            {"id": "1003", "name": f"Rv/{meter_id}", "unit": "kW"},
+        ],
+        "values": [
+            {
+                "1000": {"v": "14.02.2026 00:15"},
+                "1001": {"v": str(consumption).replace(".", ","), "s": 32},
+                "1002": {"v": "0,05", "s": 32},
+                "1003": {"v": "5,46", "s": 32},
+            }
+        ],
+    }
+
+
 def _make_config(**overrides: Any) -> OrchestratorConfig:
     """Build an OrchestratorConfig with sensible test defaults."""
     electrometer_id = overrides.pop("meter_id", "784703")
@@ -850,6 +870,27 @@ class CookieSensitiveBatchFetcher:
         raise AssertionError(f"Unexpected cookies: {cookies!r}")
 
 
+class TwoMeterBatchFetcher:
+    def __init__(self, *, fail_meter_ids: set[str] | None = None) -> None:
+        self.fail_meter_ids = fail_meter_ids or set()
+        self.calls: list[dict[str, Any]] = []
+
+    async def fetch(self, cookies: Any, **kwargs: Any) -> dict:
+        raise AssertionError("Orchestrator should call fetch_all for this test")
+
+    async def fetch_all(
+        self,
+        cookies: list[dict[str, Any]],
+        meter_id: str,
+        assembly_configs: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        self.calls.append({"meter_id": meter_id, "assembly_count": len(assembly_configs)})
+        if meter_id in self.fail_meter_ids:
+            raise ConnectionError(f"meter {meter_id} unavailable")
+        consumption = 1.42 if meter_id == "784703" else 2.84
+        return {"profile_all": _profile_payload_for_meter(meter_id, consumption)}
+
+
 # ===========================================================================
 # 9. Multi-assembly fetch (6 assemblies per cycle)
 # ===========================================================================
@@ -966,6 +1007,137 @@ class TestMultiAssemblyFetch:
                 assert config.get("fallback_yesterday") is True
             else:
                 assert config.get("fallback_yesterday") in (None, False)
+
+
+class TestMultiElectrometerRuntime:
+
+    @pytest.mark.asyncio
+    async def test_two_electrometers_publish_independent_pnd_state(self) -> None:
+        auth = FakeAuthClient()
+        fetcher = TwoMeterBatchFetcher()
+        mqtt = FakeMqttPublisher()
+        config = _make_config(
+            electrometers=[
+                {"electrometer_id": "784703", "ean": "859182400100000001"},
+                {"electrometer_id": "784704", "ean": "859182400100000002"},
+            ]
+        )
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        assert fetcher.calls == [
+            {"meter_id": "784703", "assembly_count": 6},
+            {"meter_id": "784704", "assembly_count": 6},
+        ]
+        mqtt.publish_state.assert_called_once()
+        state = mqtt.publish_state.call_args[0][0]
+        assert state["784703"]["consumption"] == pytest.approx(1.42)
+        assert state["784704"]["consumption"] == pytest.approx(2.84)
+
+    @pytest.mark.asyncio
+    async def test_parser_meter_id_mismatch_keeps_configured_meter_identity(self) -> None:
+        auth = FakeAuthClient()
+        fetcher = TwoMeterBatchFetcher()
+        mqtt = FakeMqttPublisher()
+        config = _make_config(
+            electrometers=[{"electrometer_id": "784704", "ean": "859182400100000002"}]
+        )
+
+        async def mismatched_fetch_all(
+            cookies: list[dict[str, Any]],
+            meter_id: str,
+            assembly_configs: list[dict[str, Any]],
+        ) -> dict[str, Any]:
+            return {"profile_all": _profile_payload_for_meter("784703", 2.84)}
+
+        fetcher.fetch_all = mismatched_fetch_all  # type: ignore[method-assign]
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        state = mqtt.publish_state.call_args[0][0]
+        assert "784704" in state
+        assert "784703" not in state
+        assert state["784704"]["consumption"] == pytest.approx(2.84)
+
+    @pytest.mark.asyncio
+    async def test_one_meter_failure_does_not_suppress_other_meter(self) -> None:
+        auth = FakeAuthClient()
+        fetcher = TwoMeterBatchFetcher(fail_meter_ids={"784703"})
+        mqtt = FakeMqttPublisher()
+        config = _make_config(
+            electrometers=[
+                {"electrometer_id": "784703", "ean": "859182400100000001"},
+                {"electrometer_id": "784704", "ean": "859182400100000002"},
+            ]
+        )
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        state = mqtt.publish_state.call_args[0][0]
+        assert "784703" not in state
+        assert state["784704"]["consumption"] == pytest.approx(2.84)
+
+    @pytest.mark.asyncio
+    async def test_hdo_fetches_each_ean_and_publishes_per_meter(self) -> None:
+        auth = FakeAuthClient()
+        live_context = MagicMock()
+        live_session = MagicMock(cookies=[{"name": "x"}], reused=False)
+        live_session.has_live_context = True
+        live_session.context = live_context
+        auth.ensure_session = AsyncMock(return_value=live_session)
+
+        fetcher = TwoMeterBatchFetcher()
+        mqtt = FakeMqttPublisher()
+        hdo_fetcher = AsyncMock(return_value=_HDO_RAW_RESPONSE)
+        config = _make_config(
+            electrometers=[
+                {"electrometer_id": "784703", "ean": "859182400100000001"},
+                {"electrometer_id": "784704", "ean": "859182400100000002"},
+            ]
+        )
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+            hdo_fetcher=hdo_fetcher,
+        )
+
+        await orch.run_once()
+
+        assert [call.args[1] for call in hdo_fetcher.await_args_list] == [
+            "859182400100000001",
+            "859182400100000002",
+        ]
+        assert [
+            call.kwargs["electrometer_id"]
+            for call in mqtt.publish_hdo_state.call_args_list
+        ] == [
+            "784703",
+            "784704",
+        ]
 
 
 # ===========================================================================

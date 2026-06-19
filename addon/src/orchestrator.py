@@ -162,15 +162,21 @@ class Orchestrator:
                 reading = parser.get_latest_reading_dict()
                 if not reading:
                     continue
-                reading_meter_id = reading.get("electrometer_id") or meter_id
-                if reading_meter_id not in state:
-                    state[reading_meter_id] = {}
+                parsed_meter_id = reading.get("electrometer_id")
+                if parsed_meter_id and parsed_meter_id != meter_id:
+                    logger.warning(
+                        "Parsed meter id %s differs from configured meter id %s; publishing under configured id",
+                        parsed_meter_id,
+                        meter_id,
+                    )
+                if meter_id not in state:
+                    state[meter_id] = {}
                 for parser_key, value in reading.items():
                     if parser_key == "electrometer_id":
                         continue
                     sensor_key = _PARSER_KEY_TO_SENSOR_KEY.get(parser_key)
                     if sensor_key is not None and value is not None:
-                        state[reading_meter_id][sensor_key] = value
+                        state[meter_id][sensor_key] = value
 
         if state:
             try:
