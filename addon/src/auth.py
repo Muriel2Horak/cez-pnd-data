@@ -64,9 +64,9 @@ class PlaywrightAuthClient:
         self._login_runner = login_runner or self._login_via_playwright
         self._playwright: Playwright | None = None
 
-    async def ensure_session(self) -> AuthSession:
+    async def ensure_session(self, *, force_refresh: bool = False) -> AuthSession:
         state = self._session_store.load()
-        if state and not self._session_store.is_expired(state):
+        if not force_refresh and state and not self._session_store.is_expired(state):
             live_ctx = self._session_store.get_live_context()
             live_browser = self._session_store.get_live_browser()
             if live_ctx is not None and live_browser is not None and live_browser.is_connected():

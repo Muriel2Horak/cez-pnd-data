@@ -278,6 +278,40 @@ class TestSessionExpiry:
         auth.ensure_session.assert_awaited_once()
         mqtt.publish_state.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_fetch_with_retry_session_expiry_force_refreshes_auth(self) -> None:
+        old_cookies = [{"name": "JSESSIONID", "value": "old"}]
+        new_cookies = [{"name": "JSESSIONID", "value": "new"}]
+        auth_calls: list[bool] = []
+        fetch_calls: list[list[dict[str, str]]] = []
+
+        async def ensure_session(*, force_refresh: bool = False) -> MagicMock:
+            auth_calls.append(force_refresh)
+            cookies = new_cookies if force_refresh else old_cookies
+            return MagicMock(cookies=cookies, reused=not force_refresh)
+
+        async def fetch(cookies: list[dict[str, str]]) -> dict[str, bool]:
+            fetch_calls.append(cookies)
+            values = {cookie.get("value") for cookie in cookies}
+            if "old" in values:
+                raise SessionExpiredError("old cookies rejected")
+            return {"hasData": True}
+
+        auth = FakeAuthClient()
+        auth.ensure_session = AsyncMock(side_effect=ensure_session)
+        orch = Orchestrator(
+            config=_make_config(),
+            auth_client=auth,
+            fetcher=fetch,
+            mqtt_publisher=FakeMqttPublisher(),
+        )
+
+        result = await orch._fetch_with_retry(old_cookies)
+
+        assert auth_calls == [True]
+        assert fetch_calls == [old_cookies, new_cookies]
+        assert result == {"hasData": True}
+
 
 # ===========================================================================
 # 4. Transient fetch failure retry with backoff
@@ -792,6 +826,30 @@ class ExpiringBatchFetcher:
         return {"profile_all": _ASSEMBLY_PAYLOADS[-1003]}
 
 
+class CookieSensitiveBatchFetcher:
+    """Fetcher object that succeeds only after stale cookies are replaced."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def fetch(self, cookies: Any, **kwargs: Any) -> dict:
+        raise AssertionError("Orchestrator should call fetch_all for this test")
+
+    async def fetch_all(
+        self,
+        cookies: list[dict[str, Any]],
+        meter_id: str,
+        assembly_configs: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        self.calls.append({"cookies": cookies, "meter_id": meter_id})
+        values = {cookie.get("value") for cookie in cookies}
+        if "old" in values:
+            raise SessionExpiredError("old cookies rejected")
+        if "new" in values:
+            return {"profile_all": _ASSEMBLY_PAYLOADS[-1003]}
+        raise AssertionError(f"Unexpected cookies: {cookies!r}")
+
+
 # ===========================================================================
 # 9. Multi-assembly fetch (6 assemblies per cycle)
 # ===========================================================================
@@ -1192,6 +1250,49 @@ class TestSessionExpiryMidMultiFetch:
         assert fetcher.calls == [
             {"cookies": first_session.cookies, "meter_id": "784703"},
             {"cookies": second_session.cookies, "meter_id": "784703"},
+        ]
+        mqtt.publish_state.assert_called_once()
+        state = mqtt.publish_state.call_args[0][0]
+        assert "784703" in state
+
+    @pytest.mark.asyncio
+    async def test_batch_fetch_all_session_expiry_force_refreshes_auth(self) -> None:
+        old_session = MagicMock(
+            cookies=[{"name": "JSESSIONID", "value": "old"}],
+            reused=True,
+        )
+        new_session = MagicMock(
+            cookies=[{"name": "JSESSIONID", "value": "new"}],
+            reused=False,
+        )
+        auth_calls: list[bool] = []
+
+        async def ensure_session(*, force_refresh: bool = False) -> MagicMock:
+            auth_calls.append(force_refresh)
+            if force_refresh:
+                return new_session
+            return old_session
+
+        auth = FakeAuthClient()
+        auth.ensure_session = AsyncMock(side_effect=ensure_session)
+
+        fetcher = CookieSensitiveBatchFetcher()
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        assert auth_calls == [False, True]
+        assert fetcher.calls == [
+            {"cookies": old_session.cookies, "meter_id": "784703"},
+            {"cookies": new_session.cookies, "meter_id": "784703"},
         ]
         mqtt.publish_state.assert_called_once()
         state = mqtt.publish_state.call_args[0][0]

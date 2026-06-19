@@ -320,7 +320,7 @@ class Orchestrator:
                     meter_id,
                 )
                 try:
-                    session = await self._auth.ensure_session()
+                    session = await self._auth.ensure_session(force_refresh=True)
                 except Exception as e:
                     logger.error(
                         "[%s] Re-authentication failed for meter %s: %s",
@@ -403,7 +403,7 @@ class Orchestrator:
                     SESSION_EXPIRED,
                 )
                 try:
-                    session = await self._auth.ensure_session()
+                    session = await self._auth.ensure_session(force_refresh=True)
                     cookies = session.cookies
                 except Exception:
                     logger.error(
