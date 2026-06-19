@@ -212,6 +212,13 @@ class PndFetcher:
                         payload = await self._fetch_one_in_context(
                             context, meter_id, assembly_id, date_from, date_to
                         )
+                    except SessionExpiredError:
+                        logger.warning(
+                            "Session expired while fetching assembly %s for meter %s",
+                            assembly_name,
+                            meter_id,
+                        )
+                        raise
                     except Exception as e:
                         logger.error(
                             "Assembly %s failed for meter %s: %s — continuing",
@@ -238,6 +245,13 @@ class PndFetcher:
                                 yesterday_from,
                                 date_from,
                             )
+                        except SessionExpiredError:
+                            logger.warning(
+                                "Session expired during yesterday-fallback for assembly %s meter %s",
+                                assembly_name,
+                                meter_id,
+                            )
+                            raise
                         except Exception as e:
                             logger.error(
                                 "Assembly %s yesterday-fallback failed for meter %s: %s",

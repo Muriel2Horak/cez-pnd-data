@@ -385,7 +385,7 @@ class TestFetchOneInContext:
         assert "non-JSON" in str(exc_info.value)
 
 
-class TestFetchAll:
+class TestPndFetcherBatch:
 
     def _build_mocks(
         self,
@@ -509,6 +509,37 @@ class TestFetchAll:
             )
 
         assert "daily_registers" in results
+
+    @pytest.mark.asyncio
+    async def test_fetch_all_propagates_session_expiry(self) -> None:
+        mock_async_pw, _, mock_context = self._build_mocks()
+
+        call_count = 0
+        success_response = mock_context.request.post.return_value
+
+        async def post_side_effect(*args: Any, **kwargs: Any) -> AsyncMock:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                expired = AsyncMock()
+                expired.status = 302
+                expired.headers = {"content-type": "text/html"}
+                return expired
+            return success_response
+
+        mock_context.request.post.side_effect = post_side_effect
+
+        assembly_configs = [
+            {"id": -1003, "name": "profile_all"},
+            {"id": -1021, "name": "daily_consumption"},
+        ]
+
+        with patch(
+            "addon.src.main._get_async_playwright", return_value=lambda: mock_async_pw
+        ):
+            fetcher = PndFetcher(electrometer_id="784703")
+            with pytest.raises(SessionExpiredError):
+                await fetcher.fetch_all(SAMPLE_COOKIES, "784703", assembly_configs)
 
 
 class TestPndFetcherErrorPaths:
