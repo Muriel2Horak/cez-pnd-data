@@ -298,12 +298,42 @@ class Orchestrator:
         self,
         cookies: list[dict[str, Any]],
         meter_id: str = "unknown",
+        *,
+        _reauthed: bool = False,
     ) -> dict[str, Any]:
         """Fetch all 6 PND assemblies and return merged data."""
         fetcher_obj = getattr(self._fetcher, "__self__", None)
         if fetcher_obj is not None and hasattr(fetcher_obj, "fetch_all"):
             try:
                 return await fetcher_obj.fetch_all(cookies, meter_id, ASSEMBLY_CONFIGS)
+            except SessionExpiredError:
+                if _reauthed:
+                    logger.error(
+                        "[%s] Session still expired after re-auth for meter %s",
+                        SESSION_EXPIRED,
+                        meter_id,
+                    )
+                    return {}
+                logger.warning(
+                    "[%s] Session expired during batch fetch for meter %s — re-authenticating",
+                    SESSION_EXPIRED,
+                    meter_id,
+                )
+                try:
+                    session = await self._auth.ensure_session()
+                except Exception as e:
+                    logger.error(
+                        "[%s] Re-authentication failed for meter %s: %s",
+                        SESSION_EXPIRED,
+                        meter_id,
+                        e,
+                    )
+                    return {}
+                return await self._fetch_all_assemblies(
+                    session.cookies,
+                    meter_id,
+                    _reauthed=True,
+                )
             except Exception as e:
                 logger.error(
                     "[%s] Batch fetch_all failed for meter %s: %s",

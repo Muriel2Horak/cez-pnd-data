@@ -769,6 +769,29 @@ class MultiAssemblyFetcher:
         )
 
 
+class ExpiringBatchFetcher:
+    """Fetcher object whose fetch_all expires once, then succeeds after re-auth."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.expired = False
+
+    async def fetch(self, cookies: Any, **kwargs: Any) -> dict:
+        raise AssertionError("Orchestrator should call fetch_all for this test")
+
+    async def fetch_all(
+        self,
+        cookies: list[dict[str, Any]],
+        meter_id: str,
+        assembly_configs: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        self.calls.append({"cookies": cookies, "meter_id": meter_id})
+        if not self.expired:
+            self.expired = True
+            raise SessionExpiredError("expired during batch fetch")
+        return {"profile_all": _ASSEMBLY_PAYLOADS[-1003]}
+
+
 # ===========================================================================
 # 9. Multi-assembly fetch (6 assemblies per cycle)
 # ===========================================================================
@@ -1143,6 +1166,36 @@ class TestSessionExpiryMidMultiFetch:
         assert "784703" in state
         meter_state = state["784703"]
         assert "consumption" in meter_state
+
+    @pytest.mark.asyncio
+    async def test_batch_fetch_all_session_expiry_reauths_once(self) -> None:
+        first_session = MagicMock(cookies=[{"name": "old", "value": "1"}], reused=True)
+        second_session = MagicMock(cookies=[{"name": "new", "value": "2"}], reused=False)
+
+        auth = FakeAuthClient()
+        auth.ensure_session = AsyncMock(side_effect=[first_session, second_session])
+
+        fetcher = ExpiringBatchFetcher()
+        mqtt = FakeMqttPublisher()
+        config = _make_config()
+
+        orch = Orchestrator(
+            config=config,
+            auth_client=auth,
+            fetcher=fetcher.fetch,
+            mqtt_publisher=mqtt,
+        )
+
+        await orch.run_once()
+
+        assert auth.ensure_session.await_count == 2
+        assert fetcher.calls == [
+            {"cookies": first_session.cookies, "meter_id": "784703"},
+            {"cookies": second_session.cookies, "meter_id": "784703"},
+        ]
+        mqtt.publish_state.assert_called_once()
+        state = mqtt.publish_state.call_args[0][0]
+        assert "784703" in state
 
 
 # ===========================================================================
