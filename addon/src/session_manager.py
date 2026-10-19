@@ -28,16 +28,20 @@ class CredentialsProvider:
     def __init__(
         self,
         options_path: Path | None = None,
-        env_prefix: str = "CEZ_PND",
+        env_prefix: str = "CEZ",
     ) -> None:
         self._options_path = options_path or DEFAULT_OPTIONS_PATH
         self._env_prefix = env_prefix
 
     def get_credentials(self) -> Credentials:
-        env_email = os.getenv(f"{self._env_prefix}_EMAIL")
-        env_password = os.getenv(f"{self._env_prefix}_PASSWORD")
-        if env_email and env_password:
-            return Credentials(email=env_email, password=env_password)
+        prefixes = [self._env_prefix]
+        if self._env_prefix == "CEZ":
+            prefixes.append("CEZ_PND")
+        for prefix in prefixes:
+            env_email = os.getenv(f"{prefix}_EMAIL")
+            env_password = os.getenv(f"{prefix}_PASSWORD")
+            if env_email and env_password:
+                return Credentials(email=env_email, password=env_password)
 
         data = self._read_options()
         email = data.get("email")
@@ -82,16 +86,21 @@ class SessionStore:
         self._live_browser = browser
 
     async def close_live_context(self) -> None:
-        # Playwright BrowserContext has no .closed property; use try/except
-        if self._live_context:
-            try:
-                await self._live_context.close()
-            except Exception:
-                pass  # Already closed
-        if self._live_browser and self._live_browser.is_connected():
-            await self._live_browser.close()
+        context, browser = self._live_context, self._live_browser
         self._live_context = None
         self._live_browser = None
+        try:
+            if context:
+                await context.close()
+        finally:
+            if browser and browser.is_connected():
+                await browser.close()
+
+    async def invalidate(self) -> None:
+        try:
+            self._path.unlink(missing_ok=True)
+        finally:
+            await self.close_live_context()
 
     @property
     def path(self) -> Path:
@@ -123,7 +132,14 @@ class SessionStore:
             cookies=cookies, created_at=timestamp, expires_at=expires_at
         )
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._path.open("w", encoding="utf-8") as handle:
+        with open(
+            self._path,
+            "w",
+            encoding="utf-8",
+            opener=lambda path, flags: os.open(path, flags, 0o600),
+        ) as handle:
+            # Creation mode protects new files; fchmod also tightens old files.
+            os.fchmod(handle.fileno(), 0o600)
             json.dump(
                 {
                     "cookies": cookies,

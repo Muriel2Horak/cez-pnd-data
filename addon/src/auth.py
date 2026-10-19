@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
@@ -8,6 +9,11 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable
 if TYPE_CHECKING:
     from playwright.async_api import Browser, BrowserContext, Playwright  # type: ignore[import-not-found]
 
+from .pnd_protocol import (
+    PndFetchError,
+    ServiceMaintenanceError,
+    request_meter_ids,
+)
 from .session_manager import (
     Credentials,
     CredentialsProvider,
@@ -32,11 +38,14 @@ class AuthSession:
     reused: bool
     browser: Browser | None = None
     context: BrowserContext | None = None
+    meter_ids: list[str] | None = None
 
     @property
     def has_live_context(self) -> bool:
         # Playwright BrowserContext has no .closed property; check browser connection instead
-        return self.context is not None and (self.browser is not None and self.browser.is_connected())
+        return self.context is not None and (
+            self.browser is not None and self.browser.is_connected()
+        )
 
     async def close(self) -> None:
         if self.context:
@@ -46,10 +55,6 @@ class AuthSession:
                 pass
         if self.browser and self.browser.is_connected():
             await self.browser.close()
-
-
-class ServiceMaintenanceError(Exception):
-    """Raised when CEZ/DIP portal is in planned maintenance mode."""
 
 
 class PlaywrightAuthClient:
@@ -64,12 +69,18 @@ class PlaywrightAuthClient:
         self._login_runner = login_runner or self._login_via_playwright
         self._playwright: Playwright | None = None
 
-    async def ensure_session(self) -> AuthSession:
+    async def ensure_session(self, force_refresh: bool = False) -> AuthSession:
+        if force_refresh:
+            await self._session_store.invalidate()
         state = self._session_store.load()
         if state and not self._session_store.is_expired(state):
             live_ctx = self._session_store.get_live_context()
             live_browser = self._session_store.get_live_browser()
-            if live_ctx is not None and live_browser is not None and live_browser.is_connected():
+            if (
+                live_ctx is not None
+                and live_browser is not None
+                and live_browser.is_connected()
+            ):
                 return AuthSession(
                     cookies=state.cookies,
                     reused=True,
@@ -82,14 +93,21 @@ class PlaywrightAuthClient:
         await self._session_store.close_live_context()
         credentials = self._credentials_provider.get_credentials()
         session = await self._login_runner(credentials)
-        self._session_store.save(session.cookies)
+        try:
+            self._session_store.save(session.cookies)
+        except BaseException:
+            await session.close()
+            await self._session_store.close_live_context()
+            raise
         return session
 
     async def close(self) -> None:
-        await self._session_store.close_live_context()
-        if self._playwright:
-            await self._playwright.stop()
-            self._playwright = None
+        try:
+            await self._session_store.close_live_context()
+        finally:
+            if self._playwright:
+                await self._playwright.stop()
+                self._playwright = None
 
     async def _login_via_playwright(self, credentials: Credentials) -> AuthSession:
         from playwright.async_api import (  # type: ignore[import-not-found]
@@ -101,56 +119,82 @@ class PlaywrightAuthClient:
             self._playwright = await async_playwright().start()
         assert self._playwright is not None  # for type checker
         browser = await self._playwright.chromium.launch(headless=True)
-        context = await browser.new_context(
-            user_agent=DEFAULT_USER_AGENT,
-            locale="cs-CZ",
-            timezone_id="Europe/Prague",
-            viewport={"width": 1280, "height": 720},
-        )
-        page = await context.new_page()
-
-        logger.debug("Navigating to %s", PND_BASE_URL)
-        await page.goto(PND_BASE_URL, wait_until="domcontentloaded")
+        context = None
         try:
-            await page.wait_for_selector('input[name="username"]', timeout=30_000)
-        except Exception:
-            logger.debug("Username not found, trying portal URL %s", PORTAL_URL)
-            await page.goto(PORTAL_URL, wait_until="domcontentloaded")
-            await page.wait_for_selector('input[name="username"]', timeout=120_000)
+            context = await browser.new_context(
+                user_agent=DEFAULT_USER_AGENT,
+                locale="cs-CZ",
+                timezone_id="Europe/Prague",
+                viewport={"width": 1280, "height": 720},
+            )
+            page = await context.new_page()
 
-        login_target = await _get_login_target(page)
-        logger.debug("Filling login form")
-        await login_target.fill('input[name="username"]', credentials.email)
-        await login_target.fill('input[name="password"]', credentials.password)
-        submit_locator = login_target.locator(
-            'input[type="submit"], button[type="submit"]'
-        ).first
-        await submit_locator.wait_for(timeout=120_000)
-        logger.info("Submitting login form")
-        await submit_locator.click()
+            logger.debug("Navigating to %s", PND_BASE_URL)
+            await page.goto(PND_BASE_URL, wait_until="domcontentloaded")
+            try:
+                await page.wait_for_selector('input[name="username"]', timeout=30_000)
+            except Exception:
+                logger.debug("Username not found, trying portal URL %s", PORTAL_URL)
+                await page.goto(PORTAL_URL, wait_until="domcontentloaded")
+                await page.wait_for_selector('input[name="username"]', timeout=120_000)
 
-        logger.debug("Waiting for login success")
-        await _wait_for_login_success(page)
-        cookies = await context.cookies()
-        self._session_store.set_live_context(context, browser)
-        logger.info("Login successful, got %d cookies", len(cookies))
-        return AuthSession(
-            cookies=[dict(c) for c in cookies],
-            reused=False,
-            browser=browser,
-            context=context,
-        )
+            login_target = await _get_login_target(page)
+            logger.debug("Filling login form")
+            await login_target.fill('input[name="username"]', credentials.email)
+            await login_target.fill('input[name="password"]', credentials.password)
+            submit_locator = login_target.locator(
+                'input[type="submit"], button[type="submit"]'
+            ).first
+            await submit_locator.wait_for(timeout=120_000)
+            logger.info("Submitting login form")
+            await submit_locator.click()
+
+            logger.debug("Waiting for login success")
+            meter_ids = await _wait_for_login_success(page)
+            cookies = await context.cookies()
+            self._session_store.set_live_context(context, browser)
+            logger.info("Login successful, got %d cookies", len(cookies))
+            return AuthSession(
+                cookies=[dict(c) for c in cookies],
+                reused=False,
+                browser=browser,
+                context=context,
+                meter_ids=meter_ids,
+            )
+        except BaseException:
+            try:
+                if context is not None:
+                    await context.close()
+            finally:
+                await browser.close()
+            raise
 
 
-async def _wait_for_login_success(page: Any) -> None:
-    success_pattern = re.compile(
-        r".*/(cezpnd2/dashboard/|cezpnd2/external/dashboard/view|irj/portal).*"
-    )
+async def _wait_for_login_success(page: Any) -> list[str]:
+    # A portal URL can still be the login form. Only protected JSON proves login.
     try:
-        await page.wait_for_url(success_pattern, timeout=120_000)
+        await page.wait_for_url(
+            re.compile(
+                r"https://pnd\.cezdistribuce\.cz/cezpnd2/"
+                r"(?:dashboard/|external/dashboard/view)"
+                r"|https://dip\.cezdistribuce\.cz/irj/portal(?:[/?#]|$)"
+            ),
+            timeout=120_000,
+        )
+        # Let PND select its current dashboard route; /dashboard/view is a 404.
+        await page.goto(PND_BASE_URL, wait_until="domcontentloaded")
+        for attempt in range(3):
+            try:
+                return await request_meter_ids(page.context)
+            except PndFetchError as exc:
+                if exc.status_code is not None or attempt == 2:
+                    raise
+                logger.warning("PND session validation not ready; retrying in 2s")
+                await asyncio.sleep(2)
+        raise AssertionError("PND validation retries exhausted")
     except Exception as exc:
         content = (await page.content()).lower()
-        if "odstávka" in content and "právě probíhá odstávka systému" in content:
+        if "odstávka" in content or "odstavka" in content:
             raise ServiceMaintenanceError(
                 "DIP/PND portal is in maintenance window"
             ) from exc

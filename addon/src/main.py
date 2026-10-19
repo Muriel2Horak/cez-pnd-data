@@ -11,26 +11,26 @@ import logging
 import os
 import signal
 import sys
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
-import paho.mqtt.client as mqtt_client
-
-from .auth import DEFAULT_USER_AGENT, PND_BASE_URL, PlaywrightAuthClient
+from .auth import (
+    DEFAULT_USER_AGENT,
+    PND_BASE_URL,
+    PlaywrightAuthClient,
+    ServiceMaintenanceError,
+)
+from .blocking import run_blocking
 from .dip_client import DipClient
+from .mqtt_client import MQTTClientWrapper
+from .mqtt_config import resolve_mqtt_config
 from .mqtt_publisher import MqttPublisher
 from .orchestrator import Orchestrator, OrchestratorConfig, SessionExpiredError
+from .pnd_protocol import PND_DATA_URL
+from .pnd_protocol import PndFetchError as PndFetchError
+from .pnd_protocol import build_pnd_payload, request_data
 from .session_manager import CredentialsProvider, SessionStore
-
-PND_DATA_URL = "https://pnd.cezdistribuce.cz/cezpnd2/external/data"
-
-
-class PndFetchError(Exception):
-    """Raised when PND data fetch fails (non-200 response, network error, etc.)."""
-
-    def __init__(self, message: str, status_code: Optional[int] = None) -> None:
-        super().__init__(message)
-        self.status_code = status_code
-
 
 # Configure logging
 logging.basicConfig(
@@ -43,24 +43,6 @@ def _get_async_playwright():  # type: ignore[no-untyped-def]
     from playwright.async_api import async_playwright  # type: ignore[import-not-found]
 
     return async_playwright
-
-
-def build_pnd_payload(
-    assembly_id: int,
-    date_from: str,
-    date_to: str,
-    electrometer_id: Optional[str],
-) -> Dict[str, Any]:
-    return {
-        "format": "table",
-        "idAssembly": assembly_id,
-        "idDeviceSet": None,
-        "intervalFrom": date_from,
-        "intervalTo": date_to,
-        "compareFrom": None,
-        "opmId": None,
-        "electrometerId": electrometer_id if electrometer_id is not None else "",
-    }
 
 
 class PndFetcher:
@@ -88,8 +70,9 @@ class PndFetcher:
         async_playwright = _get_async_playwright()
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True)
-            context = await self._create_browser_context(browser)
+            context = None
             try:
+                context = await self._create_browser_context(browser)
                 await context.add_cookies(cookies)
 
                 # Navigate to PND dashboard to establish WAF fingerprint (same as live_verify_flow.py)
@@ -97,7 +80,7 @@ class PndFetcher:
                 try:
                     page = await context.new_page()
                     await page.goto(
-                        "https://pnd.cezdistribuce.cz/cezpnd2/dashboard/view",
+                        PND_BASE_URL,
                         wait_until="domcontentloaded",
                         timeout=30_000,
                     )
@@ -136,14 +119,19 @@ class PndFetcher:
                     context, effective_electrometer_id, assembly_id, date_from, date_to
                 )
             finally:
-                await context.close()
-                await browser.close()
+                try:
+                    if context is not None:
+                        await context.close()
+                finally:
+                    await browser.close()
 
     async def fetch_all(
         self,
         cookies: list,
         meter_id: str,
         assembly_configs: list,
+        *,
+        request_runner: Any = None,
     ) -> Dict[str, Any]:
         """Fetch all assemblies in a single browser context per cycle.
 
@@ -155,17 +143,16 @@ class PndFetcher:
 
         Returns a dict mapping assembly name → payload for assemblies with data.
         """
-        from datetime import datetime, timedelta
-
-        today = datetime.now()
+        today = datetime.now(ZoneInfo("Europe/Prague"))
         date_from = today.strftime("%d.%m.%Y 00:00")
         date_to = today.strftime("%d.%m.%Y 23:59")
 
         async_playwright = _get_async_playwright()
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True)
-            context = await self._create_browser_context(browser)
+            context = None
             try:
+                context = await self._create_browser_context(browser)
                 await context.add_cookies(cookies)
 
                 # Navigate to PND base URL to establish browser history / WAF fingerprint
@@ -202,6 +189,23 @@ class PndFetcher:
 
                 await asyncio.sleep(1)
 
+                context_cookies = cookies
+
+                async def fetch_one(assembly_id, start, end):
+                    async def operation(current_cookies):
+                        nonlocal context_cookies
+                        if current_cookies != context_cookies:
+                            await context.clear_cookies()
+                            await context.add_cookies(current_cookies)
+                            context_cookies = current_cookies
+                        return await self._fetch_one_in_context(
+                            context, meter_id, assembly_id, start, end
+                        )
+
+                    if request_runner is not None:
+                        return await request_runner(operation)
+                    return await operation(cookies)
+
                 results: Dict[str, Any] = {}
 
                 for config in assembly_configs:
@@ -209,9 +213,9 @@ class PndFetcher:
                     assembly_name: str = config["name"]
 
                     try:
-                        payload = await self._fetch_one_in_context(
-                            context, meter_id, assembly_id, date_from, date_to
-                        )
+                        payload = await fetch_one(assembly_id, date_from, date_to)
+                    except (SessionExpiredError, ServiceMaintenanceError):
+                        raise
                     except Exception as e:
                         logger.error(
                             "Assembly %s failed for meter %s: %s — continuing",
@@ -231,13 +235,11 @@ class PndFetcher:
                         date_obj = today - timedelta(days=1)
                         yesterday_from = date_obj.strftime("%d.%m.%Y 00:00")
                         try:
-                            payload = await self._fetch_one_in_context(
-                                context,
-                                meter_id,
-                                assembly_id,
-                                yesterday_from,
-                                date_from,
+                            payload = await fetch_one(
+                                assembly_id, yesterday_from, date_from
                             )
+                        except (SessionExpiredError, ServiceMaintenanceError):
+                            raise
                         except Exception as e:
                             logger.error(
                                 "Assembly %s yesterday-fallback failed for meter %s: %s",
@@ -259,8 +261,11 @@ class PndFetcher:
                 return results
 
             finally:
-                await context.close()
-                await browser.close()
+                try:
+                    if context is not None:
+                        await context.close()
+                finally:
+                    await browser.close()
 
     async def _fetch_one_in_context(
         self,
@@ -270,85 +275,7 @@ class PndFetcher:
         date_from: str,
         date_to: str,
     ) -> Dict[str, Any]:
-        payload = build_pnd_payload(assembly_id, date_from, date_to, meter_id)
-        form_payload = {k: ("" if v is None else v) for k, v in payload.items()}
-
-        response = await context.request.post(PND_DATA_URL, data=form_payload)
-
-        if response.status == 302:
-            raise SessionExpiredError("PND fetch redirected (302) - session expired")
-        if response.status != 200:
-            raise PndFetchError(
-                f"PND fetch failed with status {response.status}",
-                status_code=response.status,
-            )
-
-        headers_dict = response.headers or {}
-        content_type = (
-            headers_dict.get("content-type", "") if hasattr(headers_dict, "get") else ""
-        )
-        if "application/json" not in content_type.lower():
-            try:
-                text = await response.text()
-            except Exception:
-                text = "(body unavailable)"
-            logger.warning(
-                "PND fetch returned non-JSON response (Content-Type: %s): %s",
-                content_type,
-                text[:500] if text else "(empty)",
-            )
-            raise PndFetchError(
-                f"PND fetch returned non-JSON response (Content-Type: {content_type})"
-            )
-
-        try:
-            data: Dict[str, Any] = await response.json()
-        except Exception as e:
-            try:
-                text = await response.text()
-            except Exception:
-                text = "(body unavailable)"
-            logger.warning(
-                "PND fetch JSON parse failed: %s, response: %s",
-                e,
-                text[:500] if text else "(empty)",
-            )
-            raise PndFetchError(f"PND fetch JSON parse failed: {e}")
-
-        logger.debug(
-            "PND fetch assembly=%d status=%d hasData=%s",
-            assembly_id,
-            response.status,
-            data.get("hasData"),
-        )
-        return data
-
-
-class MQTTClientWrapper:
-    """Wrapper for paho.mqtt.client to match expected interface."""
-
-    def __init__(self, host: str, port: int, username: str, password: str):
-        callback_api_version = getattr(mqtt_client, "CallbackAPIVersion").VERSION2
-        self._client = mqtt_client.Client(callback_api_version=callback_api_version)
-        self._client.username_pw_set(username, password)
-        self._host = host
-        self._port = port
-
-    def will_set(self, topic: str, payload: str, qos: int = 1, retain: bool = True):
-        """Set Last Will and Testament."""
-        self._client.will_set(topic, payload, qos, retain)
-
-    def connect(self):
-        """Connect to MQTT broker."""
-        self._client.connect(self._host, self._port, 60)
-
-    def publish(self, topic: str, payload: str, qos: int = 1, retain: bool = True):
-        """Publish a message to MQTT broker."""
-        self._client.publish(topic, payload, qos, retain)
-
-    def disconnect(self):
-        """Disconnect from MQTT broker."""
-        self._client.disconnect()
+        return await request_data(context, meter_id, assembly_id, date_from, date_to)
 
 
 def validate_electrometers_config(
@@ -407,22 +334,27 @@ def read_env_var(name: str, required: bool = True) -> Optional[str]:
     return value
 
 
-def create_config() -> Dict[str, Dict[str, Any]]:
+def create_config(mqtt_config: Optional[dict] = None) -> Dict[str, Dict[str, Any]]:
     """Create configuration dictionary from environment variables."""
+    credentials = CredentialsProvider().get_credentials()
     config: Dict[str, Dict[str, Any]] = {
         "cez": {
-            "email": read_env_var("CEZ_EMAIL"),
-            "password": read_env_var("CEZ_PASSWORD"),
+            "email": credentials.email,
+            "password": credentials.password,
             "electrometer_id": read_env_var("CEZ_ELECTROMETER_ID", required=False)
             or "auto",
             "ean": read_env_var("CEZ_EAN", required=False) or "",
         },
-        "mqtt": {
-            "host": read_env_var("MQTT_HOST"),
-            "port": int(read_env_var("MQTT_PORT", required=False) or "1883"),
-            "username": read_env_var("MQTT_USER", required=False) or "",
-            "password": read_env_var("MQTT_PASSWORD", required=False) or "",
-        },
+        "mqtt": (
+            mqtt_config
+            if mqtt_config is not None
+            else {
+                "host": read_env_var("MQTT_HOST"),
+                "port": int(read_env_var("MQTT_PORT", required=False) or "1883"),
+                "username": read_env_var("MQTT_USER", required=False) or "",
+                "password": read_env_var("MQTT_PASSWORD", required=False) or "",
+            }
+        ),
     }
 
     electrometers_json = read_env_var("CEZ_ELECTROMETERS", required=False)
@@ -437,6 +369,8 @@ def create_config() -> Dict[str, Dict[str, Any]]:
             electrometer_id = read_env_var("CEZ_ELECTROMETER_ID", required=False)
             ean = read_env_var("CEZ_EAN", required=False)
 
+            if electrometer_id == "auto":
+                electrometer_id = None
             if electrometer_id and ean:
                 config["cez"]["electrometers"] = [
                     {"electrometer_id": electrometer_id, "ean": ean}
@@ -460,105 +394,128 @@ def create_config() -> Dict[str, Dict[str, Any]]:
     return config
 
 
-async def main():
-    """Main application entry point."""
-    # Read configuration
-    config = create_config()
+async def run_until_shutdown(
+    work, shutdown_event, cleanup, timeout=10, on_timeout=None
+):
+    """Cancel polling and start cleanup immediately within one grace period.
 
-    # Log configuration (excluding password)
-    logger.info("Starting CEZ PND add-on")
-    logger.info(f"Email: {config['cez']['email']}")
-    logger.info(f"Electrometer ID: {config['cez']['electrometer_id'] or 'auto-detect'}")
+    Native worker threads cannot be killed by task cancellation. MQTT waits use
+    cooperative stop signals and daemon workers; the application also supplies
+    a final process-exit callback if a third-party cleanup ignores cancellation.
+    """
+    task = asyncio.create_task(work())
+    stop = asyncio.create_task(shutdown_event.wait())
 
-    # Log canonical electrometers list structure
-    if config["cez"].get("electrometers"):
-        electrometers = config["cez"]["electrometers"]
-        logger.info(f"Configured electrometers: {len(electrometers)}")
-        for i, electrometer in enumerate(electrometers, 1):
-            raw_ean = electrometer.get("ean", "")
-            if raw_ean and len(raw_ean) > 4:
-                ean_display = "*" * (len(raw_ean) - 4) + raw_ean[-4:]
-            else:
-                ean_display = "empty" if not raw_ean else raw_ean
-            logger.info(
-                f"  {i}. electrometer_id: {electrometer['electrometer_id']}, ean: {ean_display}"
-            )
-    else:
-        logger.warning("No electrometers configured - this may cause runtime errors")
-
-    logger.info(f"MQTT Host: {config['mqtt']['host']}:{config['mqtt']['port']}")
-
-    # Create MQTT client
-    mqtt_client = MQTTClientWrapper(
-        host=config["mqtt"]["host"],
-        port=config["mqtt"]["port"],
-        username=config["mqtt"]["username"],
-        password=config["mqtt"]["password"],
-    )
-
-    # Create orchestrator components
-    credentials_provider = CredentialsProvider()
-    session_store = SessionStore()
-
-    auth_client = PlaywrightAuthClient(
-        credentials_provider=credentials_provider, session_store=session_store
-    )
-
-    # These will be replaced inside the async with block
-    pnd_fetcher = None
-    hdo_fetcher = None
-
-    mqtt_publisher = MqttPublisher(
-        mqtt_client,
-        electrometers=config["cez"]["electrometers"],
-    )
-
-    # Create orchestrator configuration
-    orchestrator_config = OrchestratorConfig(
-        electrometers=config["cez"]["electrometers"],
-        email=config["cez"]["email"],
-        poll_interval_seconds=900,  # 15 minutes
-    )
-
-    async def run_orchestrator_with_session():
-        nonlocal pnd_fetcher, hdo_fetcher
-
-        pnd_fetcher = PndFetcher().fetch
-        hdo_fetcher = DipClient().fetch_hdo
-
-        orchestrator = Orchestrator(
-            config=orchestrator_config,
-            auth_client=auth_client,
-            fetcher=pnd_fetcher,
-            mqtt_publisher=mqtt_publisher,
-            hdo_fetcher=hdo_fetcher,
-        )
-
-        await orchestrator.run_loop()
-
-    # Set up signal handlers for graceful shutdown
-    _ = asyncio.get_running_loop()
-    shutdown_event = asyncio.Event()
-
-    def signal_handler(signum, frame):
-        """Handle shutdown signals."""
-        logger.info(f"Received signal {signum}, shutting down...")
-        shutdown_event.set()
-
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
+    def observe_completion(future):
+        if not future.cancelled():
+            error = future.exception()
+            if error is not None:
+                logger.error("Shutdown task failed: %s", error)
 
     try:
-        _ = await run_orchestrator_with_session()
-    except asyncio.CancelledError:
-        logger.info("Orchestrator cancelled")
-    except KeyboardInterrupt:
-        logger.info("Keyboard interrupt received")
+        done, _ = await asyncio.wait({task, stop}, return_when=asyncio.FIRST_COMPLETED)
+        if task in done:
+            await task
     finally:
-        # Clean shutdown
+        task.cancel()
+        stop.cancel()
+        # Cleanup gets its own task immediately, even when polling is still
+        # unwinding a cancelled browser operation. Both share one deadline.
+        closing = asyncio.create_task(cleanup())
+        done, pending = await asyncio.wait({task, stop, closing}, timeout=timeout)
+        for future in done:
+            observe_completion(future)
+        if pending:
+            logger.error("Shutdown cleanup exceeded %.2f seconds", timeout)
+            for future in pending:
+                future.add_done_callback(observe_completion)
+                future.cancel()
+            if on_timeout is not None:
+                on_timeout()
+
+
+async def main():
+    """Start through a signal-aware lifecycle, including configuration lookup."""
+    shutdown_event = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def signal_handler(signum):
+        """Log shutdown signals and notify the managed lifecycle."""
+        logger.info("Received signal %s, shutting down...", signum)
+        shutdown_event.set()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, signal_handler, sig)
+    auth_client = PlaywrightAuthClient(CredentialsProvider(), SessionStore())
+    mqtt_publisher = None
+
+    async def work():
+        nonlocal mqtt_publisher
+        config = create_config(await resolve_mqtt_config())
+        logger.info("Starting CEZ PND add-on")
+        logger.info("Email: %s", config["cez"]["email"])
+        logger.info(
+            "Electrometer ID: %s",
+            config["cez"].get("electrometer_id") or "auto-detect",
+        )
+        electrometers = config["cez"]["electrometers"]
+        if electrometers:
+            logger.info("Configured electrometers: %d", len(electrometers))
+            for i, electrometer in enumerate(electrometers, 1):
+                raw_ean = electrometer.get("ean", "")
+                if raw_ean and len(raw_ean) > 4:
+                    ean_display = "*" * (len(raw_ean) - 4) + raw_ean[-4:]
+                else:
+                    ean_display = raw_ean or "empty"
+                logger.info(
+                    "  %d. electrometer_id: %s, ean: %s",
+                    i,
+                    electrometer["electrometer_id"],
+                    ean_display,
+                )
+        else:
+            logger.info("No electrometers configured — automatic detection enabled")
+        logger.info("MQTT Host: %s:%s", config["mqtt"]["host"], config["mqtt"]["port"])
+        mqtt_publisher = MqttPublisher(
+            MQTTClientWrapper(**config["mqtt"]),
+            electrometers=config["cez"]["electrometers"],
+        )
+        fetcher = PndFetcher()
+        orchestrator = Orchestrator(
+            config=OrchestratorConfig(
+                electrometers=config["cez"]["electrometers"],
+                email=config["cez"]["email"],
+                auto_ean=config["cez"]["ean"],
+            ),
+            auth_client=auth_client,
+            fetcher=fetcher.fetch,
+            batch_fetcher=fetcher.fetch_all,
+            mqtt_publisher=mqtt_publisher,
+            hdo_fetcher=DipClient().fetch_hdo,
+        )
+        try:
+            await orchestrator.run_loop()
+        except asyncio.CancelledError:
+            logger.info("Orchestrator cancelled")
+            raise
+
+    async def cleanup():
         logger.info("Shutting down...")
-        await auth_client.close()
-        mqtt_publisher.stop()
+        if mqtt_publisher is not None:
+            mqtt_publisher.begin_shutdown()
+        try:
+            await auth_client.close()
+        finally:
+            if mqtt_publisher is not None:
+                await run_blocking(mqtt_publisher.stop)
+
+    try:
+        await run_until_shutdown(
+            work, shutdown_event, cleanup, on_timeout=lambda: os._exit(1)
+        )
+    finally:
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.remove_signal_handler(sig)
 
 
 if __name__ == "__main__":
@@ -567,5 +524,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("Application stopped by user")
     except Exception as e:
-        logger.error(f"Fatal error: {e}")
+        logger.error("Fatal error: %s", e)
         sys.exit(1)

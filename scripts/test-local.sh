@@ -35,10 +35,10 @@ python3 -m pytest tests/test_pnd_fetcher.py --no-cov -q
 echo "   OK: Playwright PND fetch path validated"
 
 echo "5. Running maintenance scenario tests..."
-python3 -m pytest tests/test_dip_client.py::test_fetch_hdo_raises_maintenance_on_html_token_response \
-                tests/test_dip_client.py::test_fetch_hdo_raises_maintenance_on_400_token \
-                tests/test_dip_client.py::test_fetch_hdo_raises_maintenance_on_503_token \
-                tests/test_runtime_orchestrator.py::TestSessionExpiry::test_session_expired_triggers_reauth_and_retry \
+python3 -m pytest tests/test_dip_client.py::test_fetch_hdo_raises_maintenance_on_html_content \
+                tests/test_dip_client.py::test_fetch_hdo_raises_maintenance_on_400 \
+                tests/test_dip_client.py::test_fetch_hdo_raises_maintenance_on_503 \
+                tests/test_functional_fixes.py::test_production_batch_reauth_retry_and_partial_success \
                 --no-cov -q
 echo "   OK: Maintenance scenario handling validated"
 

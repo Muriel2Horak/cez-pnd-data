@@ -25,7 +25,7 @@ from addon.src.dip_client import DIP_PORTAL_URL, SIGNALS_PATH_TEMPLATE
 
 TOKEN_PATH = "rest-auth-api?path=/token/get"
 
-DASHBOARD_URL = "https://pnd.cezdistribuce.cz/cezpnd2/dashboard/view"
+DASHBOARD_URL = "https://pnd.cezdistribuce.cz/cezpnd2"
 PND_ENTRY_URL = "https://pnd.cezdistribuce.cz/cezpnd2"
 DIP_FALLBACK_URL = "https://dip.cezdistribuce.cz/irj/portal?zpnd"
 

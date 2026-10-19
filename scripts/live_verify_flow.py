@@ -17,10 +17,11 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from playwright.async_api import async_playwright
 
-from addon.src.auth import DEFAULT_USER_AGENT
+from addon.src.auth import DEFAULT_USER_AGENT, PND_BASE_URL, _wait_for_login_success
 from scripts import live_verify_rules as validation
 
 PND_DATA_URL = "https://pnd.cezdistribuce.cz/cezpnd2/external/data"
@@ -120,26 +121,20 @@ async def async_main() -> int:
             ).first
             await submit.click()
 
-            # Wait for success
-            import re
-
-            success_pattern = re.compile(
-                r".*/(cezpnd2/dashboard/|cezpnd2/external/dashboard/view|irj/portal).*"
-            )
-            await page.wait_for_url(success_pattern, timeout=120_000)
+            await _wait_for_login_success(page)
 
             print("✓ Login successful")
 
             # Navigate to PND dashboard to establish session
             await page.goto(
-                "https://pnd.cezdistribuce.cz/cezpnd2/dashboard/view",
+                PND_BASE_URL,
                 wait_until="domcontentloaded",
             )
             await page.wait_for_timeout(5000)  # Wait for session
 
             # Step 2: Fetch PND data using Playwright's request API
             print("Step 2: Fetching PND data...")
-            today = datetime.now()
+            today = datetime.now(ZoneInfo("Europe/Prague"))
             date_from = today.strftime("%d.%m.%Y 00:00")
             date_to = today.strftime("%d.%m.%Y 23:59")
 
@@ -161,11 +156,12 @@ async def async_main() -> int:
 
             await page.wait_for_timeout(1000)
 
-            # Now the actual form request (should work after warmup)
-            print("  Sending form request...")
+            # Preserve the original Playwright data=dict JSON request.
+            print("  Sending JSON data request...")
             response = await context.request.post(
                 PND_DATA_URL,
-                data=payload,
+                data={k: "" if v is None else v for k, v in payload.items()},
+                max_redirects=0,
             )
 
             print(f"  Response status: {response.status}")

@@ -15,11 +15,14 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Union
+from zoneinfo import ZoneInfo
 
 from .auth import ServiceMaintenanceError
+from .blocking import run_blocking
 from .dip_client import DipMaintenanceError, DipTokenError
-from .hdo_parser import parse_hdo_signals
+from .hdo_parser import UNKNOWN_HDO, parse_hdo_signals
 from .parser import CezDataParser
+from .pnd_protocol import PndFetchError, SessionExpiredError, request_meter_ids
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +53,6 @@ DIP_MAINTENANCE = "DIP_MAINTENANCE"
 PORTAL_MAINTENANCE = "PORTAL_MAINTENANCE"
 
 
-class SessionExpiredError(Exception):
-    """Raised when the CEZ session is expired (e.g. HTTP 401)."""
-
-
 @dataclass(frozen=True)
 class OrchestratorConfig:
     """Runtime configuration for the orchestrator loop."""
@@ -63,6 +62,7 @@ class OrchestratorConfig:
     max_retries: int = 3
     retry_base_delay_seconds: float = 5.0
     email: str = ""
+    auto_ean: str = ""
 
     @property
     def poll_interval(self) -> timedelta:
@@ -108,12 +108,17 @@ class Orchestrator:
         fetcher: FetcherType,
         mqtt_publisher: Any,
         hdo_fetcher: HdoFetcherCallable | None = None,
+        batch_fetcher: Callable[..., Awaitable[dict[str, Any]]] | None = None,
     ) -> None:
         self._config = config
         self._auth = auth_client
         self._fetcher: FetcherType = fetcher
         self._hdo_fetcher = hdo_fetcher
         self._mqtt = mqtt_publisher
+        self._batch_fetcher = batch_fetcher
+        self._session: Any = None
+        self._reauthed = False
+        self._meters = list(config.electrometers)
 
     async def run_loop(self) -> None:
         """Starts polling loop. Runs until cancelled."""
@@ -123,8 +128,8 @@ class Orchestrator:
             self._config.meter_id,
         )
 
-        self._mqtt.start()
-        self._mqtt.publish_discovery()
+        if self._meters:
+            await self._start_mqtt()
 
         while True:
             await self.run_once()
@@ -133,12 +138,20 @@ class Orchestrator:
     async def run_once(self) -> None:
         """Execute a single fetch-parse-publish cycle."""
         cycle_start = datetime.now()
-        num_electrometers = len(self._config.electrometers)
 
         try:
             session = await self._auth.ensure_session()
         except ServiceMaintenanceError as e:
             logger.warning("[%s] %s — skipping cycle", PORTAL_MAINTENANCE, e)
+            await self._clear_all_hdo()
+            return
+        except PndFetchError as e:
+            logger.error(
+                "[%s] PND session validation failed: %s — skipping cycle",
+                CEZ_FETCH_ERROR,
+                e,
+            )
+            await self._clear_all_hdo()
             return
         except Exception as e:
             logger.error(
@@ -147,14 +160,29 @@ class Orchestrator:
                 e,
             )
             logger.debug("Auth failure details:", exc_info=True)
+            await self._clear_all_hdo()
             return
 
+        self._session = session
+        self._reauthed = False
         cookies = session.cookies
+        if not self._meters:
+            try:
+                if not await self._discover_meter():
+                    return
+            except (SessionExpiredError, ServiceMaintenanceError, PndFetchError) as exc:
+                logger.warning("Meter discovery deferred: %s", exc)
+                return
 
         state: dict[str, dict[str, Any]] = {}
-        for electrometer in self._config.electrometers:
+        for electrometer in self._meters:
             meter_id = electrometer.get("electrometer_id", "unknown")
-            all_assembly_data = await self._fetch_all_assemblies(cookies, meter_id)
+            try:
+                all_assembly_data = await self._fetch_all_assemblies(cookies, meter_id)
+            except (SessionExpiredError, ServiceMaintenanceError) as exc:
+                logger.warning("Authenticated polling stopped: %s", exc)
+                self._session = None
+                break
             if not all_assembly_data:
                 continue
             for _, assembly_payload in all_assembly_data.items():
@@ -174,7 +202,7 @@ class Orchestrator:
 
         if state:
             try:
-                self._mqtt.publish_state(state)
+                await run_blocking(self._mqtt.publish_state, state)
                 logger.debug("Published state for %d meter(s)", len(state))
             except Exception:
                 logger.error(
@@ -185,11 +213,14 @@ class Orchestrator:
             logger.info("No data available in CEZ response, skipping PND publish")
 
         if self._hdo_fetcher:
-            hdo_session = session
-            if not hdo_session.has_live_context:
+            hdo_session = self._session
+            if hdo_session is not None and not hdo_session.has_live_context:
                 logger.warning("Context dead, forcing reauth for HDO fetch")
                 try:
-                    hdo_session = await self._auth.ensure_session()
+                    hdo_session = await self._auth.ensure_session(
+                        force_refresh=not self._reauthed
+                    )
+                    self._reauthed = True
                 except Exception as e:
                     logger.error(
                         "[%s] Re-auth for HDO failed: %s — skipping HDO this cycle",
@@ -200,16 +231,17 @@ class Orchestrator:
 
             if hdo_session is not None and hdo_session.has_live_context:
                 context = hdo_session.context
-                for electrometer in self._config.electrometers:
+                for electrometer in self._meters:
                     meter_id = electrometer.get("electrometer_id", "unknown")
                     ean = electrometer.get("ean", "")
                     if not ean:
+                        await self._clear_hdo(meter_id)
                         continue
                     try:
                         hdo_raw = await self._hdo_fetcher(context, ean)
                         hdo_data = parse_hdo_signals(hdo_raw)
-                        self._mqtt.publish_hdo_state(hdo_data, electrometer_id=meter_id)
                     except DipMaintenanceError as e:
+                        await self._clear_hdo(meter_id)
                         logger.warning(
                             "[%s] %s for meter %s — skipping HDO this cycle",
                             DIP_MAINTENANCE,
@@ -217,6 +249,7 @@ class Orchestrator:
                             meter_id,
                         )
                     except DipTokenError as e:
+                        await self._clear_hdo(meter_id)
                         logger.error(
                             "[%s] Token acquisition failed for meter %s: %s — PND unaffected",
                             HDO_TOKEN_ERROR,
@@ -224,13 +257,30 @@ class Orchestrator:
                             e,
                         )
                     except Exception as e:
+                        await self._clear_hdo(meter_id)
                         logger.error(
-                            "[%s] HDO fetch/parse/publish failed for meter %s: %s — PND unaffected",
+                            "[%s] HDO fetch/parse failed for meter %s: %s — PND unaffected",
                             HDO_FETCH_ERROR,
                             meter_id,
                             e,
                         )
+                    else:
+                        try:
+                            await run_blocking(
+                                self._mqtt.publish_hdo_state,
+                                hdo_data,
+                                electrometer_id=meter_id,
+                            )
+                        except Exception as e:
+                            logger.error(
+                                "[%s] HDO publish failed for meter %s: %s",
+                                MQTT_PUBLISH_ERROR,
+                                meter_id,
+                                e,
+                            )
             else:
+                for meter in self._meters:
+                    await self._clear_hdo(meter["electrometer_id"])
                 logger.warning(
                     "[%s] No live browser context available for HDO — skipping HDO this cycle",
                     HDO_FETCH_ERROR,
@@ -240,7 +290,7 @@ class Orchestrator:
         logger.info(
             "Poll cycle completed in %.2fs for %d electrometer(s)",
             cycle_duration,
-            num_electrometers,
+            len(self._meters),
         )
 
     async def _fetch_assembly(
@@ -252,14 +302,17 @@ class Orchestrator:
         date_to: str,
     ) -> dict[str, Any] | None:
         """Fetch a single assembly from PND API."""
-        payload = await self._fetcher(
-            cookies,
-            electrometer_id=meter_id,
-            assembly_id=assembly_id,
-            date_from=date_from,
-            date_to=date_to,
-        )
-        return payload
+
+        async def operation(current_cookies):
+            return await self._fetcher(
+                current_cookies,
+                electrometer_id=meter_id,
+                assembly_id=assembly_id,
+                date_from=date_from,
+                date_to=date_to,
+            )
+
+        return await self._request_with_retry(operation, cookies)
 
     async def _fetch_assembly_with_fallback(
         self,
@@ -287,7 +340,7 @@ class Orchestrator:
             )
             date_obj = datetime.strptime(date_from.split()[0], "%d.%m.%Y")
             yesterday = date_obj - timedelta(days=1)
-            yesterday_from = yesterday.strftime("%d.%m.%Y")
+            yesterday_from = yesterday.strftime("%d.%m.%Y 00:00")
             yesterday_to = date_from
             payload = await self._fetch_assembly(
                 cookies, meter_id, config["id"], yesterday_from, yesterday_to
@@ -300,21 +353,28 @@ class Orchestrator:
         meter_id: str = "unknown",
     ) -> dict[str, Any]:
         """Fetch all 6 PND assemblies and return merged data."""
-        fetcher_obj = getattr(self._fetcher, "__self__", None)
-        if fetcher_obj is not None and hasattr(fetcher_obj, "fetch_all"):
+        if self._batch_fetcher is not None:
             try:
-                return await fetcher_obj.fetch_all(cookies, meter_id, ASSEMBLY_CONFIGS)
-            except Exception as e:
-                logger.error(
-                    "[%s] Batch fetch_all failed for meter %s: %s",
+                return await self._batch_fetcher(
+                    cookies,
+                    meter_id,
+                    ASSEMBLY_CONFIGS,
+                    request_runner=lambda operation: self._request_with_retry(
+                        operation, cookies
+                    ),
+                )
+            except (SessionExpiredError, ServiceMaintenanceError):
+                raise
+            except Exception:
+                logger.exception(
+                    "[%s] Batch setup/fetch failed for meter %s; retrying next cycle",
                     FETCH_ERROR,
                     meter_id,
-                    e,
                 )
                 return {}
 
         results = {}
-        today = datetime.now()
+        today = datetime.now(ZoneInfo("Europe/Prague"))
         date_from = today.strftime("%d.%m.%Y 00:00")
         date_to = today.strftime("%d.%m.%Y 23:59")
 
@@ -336,6 +396,8 @@ class Orchestrator:
                         config["name"],
                         meter_id,
                     )
+            except (SessionExpiredError, ServiceMaintenanceError):
+                raise
             except Exception as e:
                 logger.error(
                     "[%s] Assembly %s failed for meter %s: %s — continuing with others",
@@ -346,62 +408,72 @@ class Orchestrator:
                 )
         return results
 
-    async def _fetch_with_retry(
-        self,
-        cookies: Any,
-        *,
-        _reauthed: bool = False,
-    ) -> dict[str, Any] | None:
-        """Fetch CEZ data with bounded retry and session-expiry re-auth."""
-        last_error: Exception | None = None
-
-        for attempt in range(1, self._config.max_retries + 1):
+    async def _request_with_retry(self, operation, cookies):
+        attempt = 0
+        while True:
             try:
-                payload = await self._fetcher(cookies)
-                return payload
-
-            except SessionExpiredError:
-                if _reauthed:
-                    logger.error(
-                        "[%s] Session still expired after re-auth — aborting cycle",
-                        SESSION_EXPIRED,
-                    )
-                    return None
-
-                logger.warning(
-                    "[%s] Session expired — attempting re-authentication",
-                    SESSION_EXPIRED,
+                return await operation(
+                    self._session.cookies if self._session else cookies
                 )
+            except SessionExpiredError:
+                if self._reauthed:
+                    raise
+                self._reauthed = True
+                logger.warning("[%s] Session expired — forcing login", SESSION_EXPIRED)
                 try:
-                    session = await self._auth.ensure_session()
-                    cookies = session.cookies
-                except Exception:
-                    logger.error(
-                        "[%s] Re-authentication failed — aborting cycle",
-                        SESSION_EXPIRED,
-                    )
-                    return None
-
-                return await self._fetch_with_retry(cookies, _reauthed=True)
-
+                    self._session = await self._auth.ensure_session(force_refresh=True)
+                except Exception as exc:
+                    raise SessionExpiredError("Re-authentication failed") from exc
             except Exception as exc:
-                last_error = exc
-                if attempt < self._config.max_retries:
-                    delay = self._config.retry_base_delay_seconds * (2 ** (attempt - 1))
-                    logger.warning(
-                        "[%s] CEZ fetch failed (attempt %d/%d): %s — retrying in %.1fs",
-                        CEZ_FETCH_ERROR,
-                        attempt,
-                        self._config.max_retries,
-                        exc,
-                        delay,
+                status = getattr(exc, "status_code", None)
+                transient = (
+                    isinstance(exc, (OSError, asyncio.TimeoutError))
+                    or (
+                        isinstance(exc, PndFetchError)
+                        and status is not None
+                        and (status == 429 or status >= 500)
                     )
-                    await asyncio.sleep(delay)
+                    or type(exc).__module__.startswith("playwright.")
+                )
+                attempt += 1
+                if not transient or attempt >= self._config.max_retries:
+                    raise
+                delay = self._config.retry_base_delay_seconds * 2 ** (attempt - 1)
+                logger.warning(
+                    "[%s] Retrying assembly in %.1fs", CEZ_FETCH_ERROR, delay
+                )
+                await asyncio.sleep(delay)
 
-        logger.error(
-            "[%s] CEZ fetch failed after %d attempts: %s — aborting cycle",
-            CEZ_FETCH_ERROR,
-            self._config.max_retries,
-            last_error,
-        )
-        return None
+    async def _clear_all_hdo(self):
+        if self._hdo_fetcher:
+            for meter in self._meters:
+                await self._clear_hdo(meter["electrometer_id"])
+
+    async def _clear_hdo(self, meter_id):
+        try:
+            await run_blocking(
+                self._mqtt.publish_hdo_state, UNKNOWN_HDO, electrometer_id=meter_id
+            )
+        except Exception:
+            logger.error("[%s] Could not clear HDO state", MQTT_PUBLISH_ERROR)
+
+    async def _start_mqtt(self):
+        await run_blocking(self._mqtt.start)
+        await run_blocking(self._mqtt.publish_discovery)
+
+    async def _discover_meter(self):
+        ids = self._session.meter_ids
+        if ids is None:
+            ids = await request_meter_ids(self._session.context)
+        ids = set(ids)
+        if len(ids) > 1:
+            raise ValueError(
+                "Multiple meter IDs detected; configure electrometers explicitly"
+            )
+        if not ids:
+            logger.info("No meter detected yet; retrying next polling cycle")
+            return False
+        self._meters = [{"electrometer_id": ids.pop(), "ean": self._config.auto_ean}]
+        self._mqtt.set_electrometers(self._meters)
+        await self._start_mqtt()
+        return True

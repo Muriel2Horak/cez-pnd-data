@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -12,6 +14,36 @@ from addon.src.session_manager import (
     SessionState,
     SessionStore,
 )
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_session_save_sets_owner_only_permissions_before_writing(
+    tmp_path, monkeypatch, existing
+):
+    path = tmp_path / "session.json"
+    if existing:
+        path.write_text("{}", encoding="utf-8")
+        path.chmod(0o644)
+    original_dump = json.dump
+    modes_at_write = []
+
+    def checked_dump(payload, handle, **kwargs):
+        modes_at_write.append(stat.S_IMODE(os.fstat(handle.fileno()).st_mode))
+        return original_dump(payload, handle, **kwargs)
+
+    monkeypatch.setattr(json, "dump", checked_dump)
+    store = SessionStore(path)
+    cookies = [{"name": "TEST_SESSION", "value": "test-cookie", "expires": 0}]
+    previous_umask = os.umask(0)
+    try:
+        saved = store.save(cookies)
+    finally:
+        os.umask(previous_umask)
+
+    assert modes_at_write == [0o600]
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert store.load() == saved
+    assert saved.cookies == cookies
 
 
 class DummyCredentialsProvider(CredentialsProvider):

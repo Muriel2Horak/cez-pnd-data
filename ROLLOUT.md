@@ -1,5 +1,33 @@
 # CEZ PND Add-on Rollout Plan
 
+## 0.5.0 functional validation
+
+0.5.0 contains a breaking availability-topic change for manual consumers. The unreleased 0.4.2 candidate must not be published under its old version. Follow the README upgrade guide, including manual MQTT configuration changes and rollback cleanup.
+
+Local automated verification covers real Supervisor-shaped HTTP responses, Playwright JSON serialization, Mosquitto authentication/delivery/reconnect/LWT, and Home Assistant HDO discovery/unknown-state contracts. The upgrade test must use real Home Assistant entity registries and Mosquitto; schema validation alone does not establish migration safety.
+
+For the isolated Home Assistant checks, use Python 3.14, install `requirements_homeassistant_test.txt` and Mosquitto (including `mosquitto_passwd`), then run `REQUIRE_MQTT_INTEGRATION=1 python -m pytest tests/test_homeassistant_contract.py tests/test_homeassistant_upgrade.py --no-cov -q`. Tests create temporary configuration directories and localhost-only services, and disable automatic Home Assistant dependency installation. The Supervisor Python client is needed by the MQTT configuration-flow import; the tests do not require a running Supervisor.
+
+Follow-up regression scenarios include a broker listener starting after the first refused connection, readings fetched while disconnected, retained replay interrupted by a delayed acknowledgement, empty dated HDO windows, temporary browser setup failures, and a subprocess with cancellation-resistant cleanup. Shutdown starts cleanup immediately and allows 10 seconds for graceful completion; exceeding that deadline exits the application with status 1.
+
+Before publishing the normal update from the original repository:
+
+- Build the add-on image and install it on Home Assistant OS with the stock Mosquitto add-on.
+- Supply only CEZ settings; confirm Supervisor supplies MQTT credentials, the broker accepts them, and sensor readings arrive without a fork or manual MQTT credentials.
+- Check credentials-only meter detection and explicit multi-meter/EAN configuration.
+- Upgrade an existing HA OS installation: confirm entity IDs, custom names, disabled status and device associations survive discovery updates. Check a manually configured sensor after applying the documented YAML change.
+- Confirm the original HDO sensor remains, the optional binary sensor is disabled by default, and both report unknown values when schedules cannot be established. Repeat the upgrade and verify there are no duplicate entities.
+- Confirm legacy availability cleanup occurs only after discovery succeeds. Inject a discovery failure and verify old retained availability survives.
+- Rehearse the documented rollback and selective retained-topic cleanup on a test installation.
+- Restart Mosquitto; confirm recovery without restarting the add-on. Stop and abruptly terminate the add-on; confirm all meters become unavailable.
+- Verify real CEZ login, a polling cycle, session recovery, and a later polling cycle. Watch for browser accumulation during login failures.
+
+Read-only live checks on 2026-10-15 confirmed that URL-encoded data requests receive a portal-protection rejection, while JSON requests without a selected meter reached HTTP 500. The account had not completed PND activation. On 2026-10-19, after activation, the dashboard definition returned one meter. Unselected data requests still returned HTTP 500, while requests selecting that meter or its device group returned HTTP 200 with data. Authentication and discovery now use the protected dashboard definition. A production polling cycle verified login, automatic detection, all six assemblies (including yesterday's register fallback), and discovery/state delivery to an in-memory sink. This does not verify delivery to a live MQTT broker or Home Assistant OS. Live reactive profiles reported kVAr; discovery now uses Home Assistant's kvar unit without rescaling values. Verify existing reactive entities and statistics after the unit correction; historical records are not repaired automatically. No service-wide outage or account block was established.
+
+Live HDO verification on 2026-10-19 found three signal channels across seven dates. The DIP frontend groups by signal and selects the first signal in response order. The parser now follows that selection without combining channels; the live response produced known tariff, next-switch, schedule, and signal fields. Regression tests cover multiple channels, identical duplicates, conflicting selected-channel schedules, and missing selected-channel dates.
+
+The local machine has no Docker executable or live Home Assistant OS installation available. The image build and live deployment checks remain release gates, not completed validations.
+
 ## Pre-release Checklist
 
 Before any release, ensure all items are complete:

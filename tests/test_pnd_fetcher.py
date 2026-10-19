@@ -103,13 +103,13 @@ class TestPndFetcher:
                 date_to="14.02.2026 00:00",
             )
 
-        # WAF warmup + actual form request = 2 calls
+        # WAF warmup + actual JSON request = 2 calls
         assert mock_context.request.post.call_count == 2
         # First call: WAF warmup (JSON)
         warmup_call = mock_context.request.post.call_args_list[0]
         assert warmup_call[0][0] == PND_DATA_URL
         assert "Content-Type" in warmup_call[1].get("headers", {})
-        # Second call: actual form request
+        # Second call: actual JSON request
         form_call = mock_context.request.post.call_args_list[1]
         assert form_call[0][0] == PND_DATA_URL
 
@@ -262,7 +262,7 @@ class TestPndFetcher:
                 )
 
         assert "302" in str(exc_info.value)
-        assert "session expired" in str(exc_info.value).lower()
+        assert "session" in str(exc_info.value).lower()
         mock_context.close.assert_called_once()
         mock_browser.close.assert_called_once()
 
@@ -288,14 +288,14 @@ class TestPndFetcher:
         mock_browser.close.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_403_error_raises_pnd_fetch_error(self) -> None:
+    async def test_403_error_raises_session_expired_error(self) -> None:
         mock_pw, mock_browser, mock_context = _build_playwright_mocks(status=403)
 
         with patch(
             "addon.src.main._get_async_playwright", return_value=lambda: mock_pw
         ):
             fetcher = PndFetcher()
-            with pytest.raises(PndFetchError) as exc_info:
+            with pytest.raises(SessionExpiredError) as exc_info:
                 await fetcher.fetch(
                     SAMPLE_COOKIES,
                     assembly_id=-1003,
@@ -303,7 +303,7 @@ class TestPndFetcher:
                     date_to="14.02.2026 00:00",
                 )
 
-        assert exc_info.value.status_code == 403
+        assert "403" in str(exc_info.value)
         mock_context.close.assert_called_once()
         mock_browser.close.assert_called_once()
 
@@ -339,7 +339,7 @@ class TestFetchOneInContext:
         mock_context.request.post.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_form_payload_normalization(self) -> None:
+    async def test_json_payload_normalization(self) -> None:
         mock_context = self._build_mock_context()
         fetcher = PndFetcher()
 

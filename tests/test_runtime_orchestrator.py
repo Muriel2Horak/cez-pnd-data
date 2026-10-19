@@ -19,9 +19,11 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
+from zoneinfo import ZoneInfo
 
 import pytest
 
+from addon.src.hdo_parser import UNKNOWN_HDO
 from addon.src.orchestrator import (
     ASSEMBLY_CONFIGS,
     CEZ_FETCH_ERROR,
@@ -1155,7 +1157,7 @@ _HDO_RAW_RESPONSE: dict[str, Any] = {
         {
             "signal": "EVV2",
             "den": "Pondělí",
-            "datum": "16.02.2026",
+            "datum": datetime.now(ZoneInfo("Europe/Prague")).strftime("%d.%m.%Y"),
             "casy": "00:00-08:00;   09:00-12:00;   13:00-15:00;   16:00-19:00;   20:00-24:00",
         }
     ]
@@ -1257,7 +1259,9 @@ class TestHdoIntegration:
         await orch.run_once()
 
         mqtt.publish_state.assert_called_once()
-        mqtt.publish_hdo_state.assert_not_called()
+        mqtt.publish_hdo_state.assert_called_once_with(
+            UNKNOWN_HDO, electrometer_id="784703"
+        )
 
     @pytest.mark.asyncio
     async def test_hdo_failure_logs_error(self, caplog) -> None:
@@ -1378,7 +1382,9 @@ class TestHdoIntegration:
         with caplog.at_level(logging.ERROR):
             await orch.run_once()
 
-        mqtt.publish_hdo_state.assert_not_called()
+        mqtt.publish_hdo_state.assert_called_once_with(
+            UNKNOWN_HDO, electrometer_id="784703"
+        )
         assert any("HDO" in record.message for record in caplog.records)
 
     @pytest.mark.asyncio
@@ -1410,7 +1416,9 @@ class TestHdoIntegration:
         with caplog.at_level(logging.WARNING):
             await orch.run_once()
 
-        mqtt.publish_hdo_state.assert_not_called()
+        mqtt.publish_hdo_state.assert_called_once_with(
+            UNKNOWN_HDO, electrometer_id="784703"
+        )
         hdo_fetcher.assert_not_awaited()
         assert any(
             "No live browser context" in record.message for record in caplog.records

@@ -1,0 +1,17 @@
+configuration:
+  electrometer_id:
+    name: ID elektroměru
+    description: >-
+      Identifikátor fyzického elektroměru pro data PND, nikoliv EAN odběrného
+      místa. Nechte prázdné pro automatickou detekci. EAN pro HDO vyplňte zvlášť.
+  ean:
+    name: EAN odběrného místa (pro HDO)
+    description: >-
+      EAN najdete na faktuře nebo v portálu ČEZ. Není to ID elektroměru a
+      automatická detekce jej nevyplní. Bez EAN zůstanou HDO senzory unknown;
+      naměřená data PND se načítají dál.
+  electrometers:
+    name: Seznam elektroměrů (JSON)
+    description: >-
+      Pro více elektroměrů zadejte JSON seznam s electrometer_id a ean u každého
+      elektroměru. Tento seznam má přednost před samostatnými poli ID a EAN.

@@ -22,6 +22,8 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
+    "paho-mqtt>=2.0.0",
+    "playwright>=1.48.0",
     "aiohttp>=3.8.0",
     "voluptuous>=0.13.0",
 ]
@@ -32,6 +34,7 @@ test = [
     "pytest-cov>=4.0.0",
     "pytest-mock>=3.10.0",
     "aioresponses>=0.7.0",
+    "pytest-asyncio>=0.21.0",
 ]
 
 [tool.pytest.ini_options]
@@ -92,6 +95,13 @@ use_parentheses = true
 ensure_newline_before_comments = true
 skip_gitignore = true
 skip = [".git", ".hg", ".mypy_cache", ".tox", ".venv", "_build", "buck-out", "build", "dist"]
+
+[tool.ruff]
+target-version = "py39"
+
+[tool.ruff.lint]
+# Keep the project's syntax/undefined-name checks stable across Ruff releases.
+select = ["E4", "E7", "E9", "F"]
 
 [tool.black]
 line-length = 88

@@ -2,13 +2,15 @@
 
 Integrace elektroměrových dat z [CEZ Distribuce PND](https://pnd.cezdistribuce.cz) do Home Assistant pomocí MQTT Discovery.
 
+**Aktualizace na 0.5.0 mění MQTT téma dostupnosti.** Ručně nakonfigurované senzory a automatizace je nutné upravit před aktualizací; viz [průvodce aktualizací](#aktualizace-na-050). Entity spravované pomocí MQTT Discovery aktualizuje doplněk. Původní HDO senzor zůstává zachován.
+
 ## Co to dělá
 
 Add-on se přihlásí k portálu CEZ PND pomocí Playwright (Chromium), stáhne aktuální čtvrthodinová data z elektroměru a publikuje je jako HA senzory přes MQTT. Senzory se v Home Assistantu vytvoří automaticky – žádná ruční konfigurace entit.
 
 **Senzory:**
 
-Tento add-on poskytuje **17 senzorů** (13 PND + 4 HDO). Všechny se automaticky vytváří přes MQTT Discovery.
+Tento add-on poskytuje **17 senzorů** (13 PND + 4 HDO) a jeden volitelný HDO binary sensor. Všechny se registrují přes MQTT Discovery; přidaný binary sensor je ve výchozím stavu zakázaný.
 
 ### PND Senzory (13 ks)
 
@@ -16,11 +18,11 @@ Tento add-on poskytuje **17 senzorů** (13 PND + 4 HDO). Všechny se automaticky
 |--------|-------|----------|---------------------|
 | CEZ Consumption Power | Odběr (+A) | kW | Tab 00 |
 | CEZ Production Power | Dodávka (-A) | kW | Tab 00 |
-| CEZ Reactive Power | Jalový výkon (Rv) | kW | Tab 00 |
-| CEZ Reactive Import Ri+ | Import induktivní reaktivní (+ind) | var | Tab 03 |
-| CEZ Reactive Export Rc- | Export kapacitivní reaktivní (-cap) | var | Tab 03 |
-| CEZ Reactive Export Ri- | Export induktivní reaktivní (-ind) | var | Tab 04 |
-| CEZ Reactive Import Rc+ | Import kapacitivní reaktivní (+cap) | var | Tab 04 |
+| CEZ Reserved Power | Rezervovaný výkon (Rv) | kW | Tab 00 |
+| CEZ Reactive Import Ri+ | Import induktivní reaktivní (+ind) | kvar | Tab 03 |
+| CEZ Reactive Export Rc- | Export kapacitivní reaktivní (-cap) | kvar | Tab 03 |
+| CEZ Reactive Export Ri- | Export induktivní reaktivní (-ind) | kvar | Tab 04 |
+| CEZ Reactive Import Rc+ | Import kapacitivní reaktivní (+cap) | kvar | Tab 04 |
 | CEZ Daily Consumption | Denní odběr energie | kWh | Tab 07 |
 | CEZ Daily Production | Denní dodávka energie | kWh | Tab 07 |
 | CEZ Register Consumption (+E) | Kumulativní odběr | kWh | Tab 08 |
@@ -32,10 +34,12 @@ Tento add-on poskytuje **17 senzorů** (13 PND + 4 HDO). Všechny se automaticky
 
 | Senzor | Typ | Popis |
 |--------|-----|-------|
-| CEZ HDO Low Tariff Active | binary_sensor | Je právě nízký tarif aktivní? (ON/OFF) |
+| CEZ HDO Low Tariff Active | sensor | Původní senzor: je právě nízký tarif aktivní? (ON/OFF) |
 | CEZ HDO Next Switch | sensor | Kdy dojde další přepnutí tarifu (timestamp) |
 | CEZ HDO Schedule Today | sensor | Dnešní NT časová okna (např. `00:00-08:00; 09:00-12:00; 13:00-15:00; 16:00-19:00; 20:00-24:00`) |
 | CEZ HDO Signal | sensor | Název HDO signálu (např. `EVV2`) |
+
+Od 0.5.0 je navíc dostupný `binary_sensor` nízkého tarifu se samostatným unique_id končícím `_binary`. Zapnete jej v Nastavení → Zařízení a služby → MQTT → zařízení CEZ PND → zakázané entity. Původní `sensor` zůstává funkční pro existující automatizace a dashboardy. Obě entity používají stejná data.
 
 ## Požadavky
 
@@ -70,8 +74,27 @@ V konfiguraci add-onu vyplňte:
 |------|---------|-------|
 | `email` | Ano | Přihlašovací e-mail k CEZ PND |
 | `password` | Ano | Heslo k CEZ PND |
-| `electrometer_id` | Ne | ID elektroměru (auto-detekce z dat, ruční zadání jako fallback) |
+| `electrometer_id` | Ne | ID elektroměru (auto-detekce ze seznamu PND, případně ruční zadání) |
+| `ean` | Pro HDO | EAN odběrného místa z faktury nebo portálu ČEZ; nevyplňuje se automaticky |
 | `electrometers` | Ne | JSON pole s více elektroměry (viz níže) |
+
+**ID elektroměru není EAN.** `electrometer_id` označuje fyzický elektroměr a slouží pro naměřená data PND. `ean` označuje odběrné místo a je potřeba pro rozvrhy HDO. Automatická detekce zjistí pouze ID elektroměru; EAN vyplňte ručně jako text v uvozovkách. Pokud zůstane prázdný, PND funguje dál, ale HDO senzory budou `unknown`. Při použití seznamu `electrometers` vyplňte EAN u každého elektroměru v tomto seznamu.
+
+### MQTT připojení (od 0.5.0)
+
+V Home Assistant OS doplněk získá adresu, port a přihlašovací údaje brokeru automaticky ze služby Supervisoru `GET /services/mqtt`. MQTT účet `homeassistant` ani jeho heslo nemusíte zadávat do konfigurace doplňku. Samotná deklarace `mqtt:need` proměnné prostředí nenastavuje.
+
+Pro lokální spuštění mimo Supervisor nastavte `MQTT_HOST`, volitelně `MQTT_PORT` (výchozí `1883`), `MQTT_USER`, `MQTT_PASSWORD` a `MQTT_SSL=true` pro TLS. Explicitní `MQTT_HOST` vybere celou konfiguraci z prostředí. Údaje se nekombinují s jiným brokerem ze Supervisoru.
+
+Doplněk ohlásí MQTT jako online až po přijetí spojení brokerem a potvrzení publikace. Při odmítnutí účtu skončí s chybou připojení. Po přerušení již navázaného spojení automaticky obnoví připojení a znovu publikuje konfiguraci a poslední stavy.
+
+Při prvním připojení čeká až 60 sekund na dostupnost brokeru. Hodnoty všech elektroměrů načtené během výpadku si uchová pro obnovené připojení. Přerušené odesílání uložených konfigurací opakuje i bez dalšího odpojení. Při ukončení má úklid prostředků limit 10 sekund; pokud se nedokončí, proces skončí se stavem 1 a odpovídající chybou v logu.
+
+### Automatické nalezení elektroměru
+
+Prázdné `electrometer_id` nebo hodnota `auto` spustí detekci ID ze seznamu elektroměrů v chráněném endpointu PND `GET /cezpnd2/external/dashboard/window/definition`. Detekce nevyžaduje naměřená data. Bez výsledku počká do dalšího cyklu; při více různých ID vyžádá explicitní konfiguraci `electrometers`. Volitelné `ean` se přiřadí pouze k jednomu jednoznačně nalezenému elektroměru.
+
+HDO používá rozvrh pro aktuální datum v časové zóně Europe/Prague. Pokud DIP vrátí více signálů, doplněk stejně jako portál vybere první signál v pořadí odpovědi a používá jej pro všechny dny. Časy různých signálů neslučuje; vybraný signál zobrazuje senzor HDO Signal. Shodné opakované rozvrhy přijme, konfliktní rozvrhy stejného signálu a data odmítne. Neznámý dnešní rozvrh nebo další přepnutí se zobrazí jako `unknown`; doplněk nepřebírá automaticky včerejší rozvrh. Bez EAN zůstávají HDO hodnoty neznámé, PND data se načítají dál.
 
 ## Konfigurace více elektroměrů
 
@@ -118,7 +141,7 @@ ean: "85912345678901"
 │                     │◀───▶│  Orchestrator (15min polling)    │────▶│               │
 │  Login (iframe)     │     │  ├── Auth (Playwright → cookies) │     └──────┬────────┘
 │  OAuth/SAML flow    │     │  ├── PndFetcher (WAF warmup +    │            │
-└─────────────────────┘     │  │   form POST → 6 assemblies)  │            ▼
+└─────────────────────┘     │  │   JSON POST → 6 assemblies)  │            ▼
                             │  ├── DipClient (aiohttp → HDO)   │   ┌──────────────────┐
 ┌─────────────────────┐     │  ├── CezDataParser (96 rec →     │   │  Home Assistant   │
 │   CEZ PND API       │     │  │   latest reading)             │   │  (MQTT Discovery) │
@@ -139,7 +162,7 @@ ean: "85912345678901"
 1. **Playwright launch** — headless Chromium s českým locale a user-agentem
 2. **Navigace na PND** → přesměrování na DIP login portál (`dip.cezdistribuce.cz`)
 3. **Login v iframe** — detekce login formu v iframe/page, vyplnění email + heslo, submit
-4. **Čekání na redirect** — `cezpnd2/dashboard/` nebo `irj/portal` URL pattern = úspěch
+4. **Ověření přihlášení** — po přesměrování následuje ověření chráněnou JSON definicí dashboardu PND; samotná URL nestačí. Prázdný seznam elektroměrů je platný i před zpřístupněním dat po aktivaci PND.
 5. **Cookie extraction** — `context.cookies()` → uložení do `/data/session_state.json`
 6. **Session TTL** — 6 hodin (konfigurovatelné), expiry z cookie `expires` nebo TTL fallback
 7. **Auto-reauth** — při expiraci orchestrátor automaticky opakuje login
@@ -150,18 +173,22 @@ CEZ PND API vyžaduje specifický přístup kvůli WAF (Web Application Firewall
 **PND data se fetchují POUZE přes Playwright (browser automation)** — HTTP/aiohttp cesta byla odstraněna.
 
 ```
-1. WAF warmup request (JSON, očekávaný 400)
+1. Ověření přihlášení a získání dostupných elektroměrů
+   GET /cezpnd2/external/dashboard/window/definition
+   → Status 200 + JSON se seznamem electrometers
+
+2. Přípravný request pro načítání sestav (JSON)
    POST /cezpnd2/external/data (Playwright browser)
    Content-Type: application/json
    Body: {"format":"table","idAssembly":-1003,...}
-   → Status 400 (expected — sets WAF cookies/state)
+   → Chybová odpověď je možná; rozhoduje až následující požadavek
 
-2. Pauza 1 sekunda
+3. Pauza 1 sekunda
 
-3. Skutečný data request (form-encoded)
+4. Skutečný data request pro vybraný elektroměr (JSON, původní Playwright data=dict)
    POST /cezpnd2/external/data (Playwright browser)
-   Content-Type: application/x-www-form-urlencoded   ← KRITICKÉ
-   Body: format=table&idAssembly=-1003&...
+   Content-Type: application/json
+   Body: {"format":"table","idAssembly":-1003,...}
    → Status 200 + JSON data
 ```
 
@@ -175,7 +202,7 @@ Orchestrátor fetchuje 6 různých sestav dat v každém cyklu:
 
 | Assembly ID | Název | Popis | Fallback |
 |-------------|-------|-------|----------|
-| -1003 | profile_all | Odběr, dodávka, jalový výkon (15min) | — |
+| -1003 | profile_all | Odběr, dodávka, rezervovaný výkon (15min) | — |
 | -1012 | profile_consumption_reactive | Import/export reaktivní (+ind, -cap) | — |
 | -1011 | profile_production_reactive | Import/export reaktivní (-ind, +cap) | — |
 | -1021 | daily_consumption | Denní odběr energie | — |
@@ -198,7 +225,73 @@ HDO signály se fetchují přes **DIP API** (ne PND):
 |-----|--------|---------|
 | Discovery config | `homeassistant/sensor/cez_pnd_{meter_id}/{key}/config` | `homeassistant/sensor/cez_pnd_784703/consumption/config` |
 | Stav senzoru | `cez_pnd/{meter_id}/{key}/state` | `cez_pnd/784703/consumption/state` |
-| Dostupnost | `cez_pnd/{meter_id}/availability` | `cez_pnd/784703/availability` |
+| Dostupnost všech elektroměrů | `cez_pnd/availability` | `cez_pnd/availability` |
+| HDO nízký tarif – discovery | `homeassistant/binary_sensor/cez_pnd_{meter_id}/hdo_low_tariff_active/config` | `homeassistant/binary_sensor/cez_pnd_784703/hdo_low_tariff_active/config` |
+
+Původní HDO `sensor` si zachová discovery téma, unique_id i téma hodnot. Nový volitelný `binary_sensor` má odlišné unique_id `cez_pnd_{meter_id}_hdo_low_tariff_active_binary`; původní senzor se nemaže ani nepřejmenovává.
+
+## Aktualizace na 0.5.0
+
+### Změna dostupnosti MQTT
+
+| Verze | Téma dostupnosti | Stav |
+|-------|-----------------|------|
+| Do 0.4.1 | `cez_pnd/{meter_id}/availability` (např. `cez_pnd/784703/availability`) | Původní téma; od 0.5.0 se již neaktualizuje |
+| Od 0.5.0 | `cez_pnd/availability` | Společné téma pro všechny elektroměry |
+
+Payloady zůstávají `online` a `offline`. Jeden MQTT Last Will nyní označí jako nedostupné všechny elektroměry při pádu procesu nebo ztrátě spojení. Stavové topicy, identifikátory zařízení a unique_id existujících senzorů se nemění. Dostupnost označuje spojení s brokerem, nikoliv čerstvost dat z ČEZ.
+
+**Entity z MQTT Discovery:** doplněk aktualizuje konfigurace na jejich původních discovery tématech. Existující entity a jejich uživatelská pojmenování mají zůstat zachovány. Během restartu mohou být dočasně nedostupné. Uživatel nemusí přidávat entity znovu.
+
+**Ruční MQTT senzory a automatizace:** témata dostupnosti se automaticky nepřepíší. Před aktualizací změňte všechny odkazy na per-meter dostupnost, včetně MQTT triggerů. Společné téma oznamuje dostupnost celého doplňku; z jeho názvu již nelze zjistit konkrétní elektroměr.
+
+Před aktualizací:
+
+```yaml
+mqtt:
+  sensor:
+    - name: "CEZ odběr"
+      state_topic: "cez_pnd/784703/consumption/state"
+      availability_topic: "cez_pnd/784703/availability"
+      payload_available: "online"
+      payload_not_available: "offline"
+```
+
+Po úpravě konfigurace:
+
+```yaml
+mqtt:
+  sensor:
+    - name: "CEZ odběr"
+      state_topic: "cez_pnd/784703/consumption/state"
+      availability_topic: "cez_pnd/availability"
+      payload_available: "online"
+      payload_not_available: "offline"
+```
+
+1. Zálohujte konfiguraci Home Assistantu a poznamenejte si verzi doplňku.
+2. Zastavte původní doplněk. Upravte ruční senzory a automatizace podle příkladu; načtěte změněnou konfiguraci v Home Assistantu. Do spuštění nové verze může být dostupnost `unavailable`.
+3. Aktualizujte a spusťte 0.5.0. Doplněk nejprve potvrdí společné `online`, poté zveřejní všechny discovery konfigurace a až po jejich potvrzení brokerem odstraní retained zprávy ze starých témat dostupnosti. Při chybě discovery se tato stará témata nečistí.
+4. Zkontrolujte log s tématem `cez_pnd/availability`, zachování existujících entit a příchod hodnot. Ověřte automatizace reagující na nedostupnost. Staré topicy nejsou kompatibilní aliasy; ponechaní staré ruční konfigurace může vést k nedostupnému nebo zastaralému stavu.
+
+### HDO při aktualizaci
+
+Původní `sensor` nízkého tarifu zůstává; opravuje se pouze jeho neplatná metadata. Pokud jej Home Assistant kvůli původním metadatům nikdy nevytvořil, může se objevit poprvé. Nový `binary_sensor` je zakázán ve výchozím stavu a zapnutí je dobrovolné. Není nutné měnit původní entity v dashboardech ani automatizacích. Obě varianty používají `ON`/`OFF`; neověřené hodnoty jsou `unknown`.
+
+### Oprava významu Rv
+
+Podle [manuálu ČEZ PND, strana 5](https://www.cezdistribuce.cz/file/edee/distribuce/pnd/portal_namerenych_dat_manual.pdf#page=5) znamená RV rezervovaný výkon. Od 0.5.0 se proto výchozí název senzoru mění na „Reserved Power / Rezervovaný výkon“ a device class na `power`. Jednotka zůstává `kW`, hodnoty se nepřepočítávají. Čtyři samostatné jalové kanály Ri/Rc používají `kvar` a `reactive_power`. Živá odpověď ČEZ uvádí `kVAr`; doplněk zachovává číselné hodnoty a používá zápis jednotky podporovaný Home Assistantem. Původní `var` chybně označovalo hodnoty v tisíckrát menší jednotce.
+
+Identifikátory a témata Ri/Rc se nemění. MQTT Discovery opraví jednotku při spuštění doplňku; u ručních MQTT senzorů změňte `unit_of_measurement` na `kvar`. Zkontrolujte prahy automatizací a vlastní převody jednotek. Oprava discovery zpětně neopravuje dříve uloženou historii se špatnou jednotkou; před aktualizací proveďte zálohu a případné problémy statistik řešte v Home Assistantu.
+
+Pro kompatibilitu zůstávají historické identifikátory: unique_id `cez_pnd_{meter_id}_reactive`, stavové téma `cez_pnd/{meter_id}/reactive/state` i discovery téma `homeassistant/sensor/cez_pnd_{meter_id}/reactive/config`. Parser zachovává historická jména `reactive_kw` a `reactive_col_id`. Existující entity, historie a vlastní uživatelské názvy zůstávají zachovány; dříve uložené hodnoty Rv představují rezervovaný výkon, nikoliv jalový výkon. Pokud Home Assistant původní neplatnou konfiguraci odmítal, senzor se po opravě může vytvořit poprvé.
+
+### Návrat na předchozí verzi
+
+1. Zastavte 0.5.0 a vraťte ruční konfigurace a MQTT triggery na původní per-meter témata.
+2. Pro každý elektroměr odstraňte **pouze přidanou binary discovery konfiguraci** publikací prázdného payloadu s `retain: true` na `homeassistant/binary_sensor/cez_pnd_{meter_id}/hdo_low_tariff_active/config`. Původní konfigurace v doméně `sensor` nemažte.
+3. Stejným způsobem odstraňte retained zprávu na `cez_pnd/availability`, pokud ji již nepoužívá žádný váš spotřebitel. Například v nástroji pro publikaci MQTT v Home Assistantu nastavte příslušné téma, prázdný payload a retain. Případný zbylý záznam volitelné entity odstraňte v Home Assistantu po odstranění discovery zprávy.
+4. Nainstalujte předchozí verzi nebo obnovte zálohu, načtěte ruční konfiguraci a spusťte doplněk. Ověřte obnovené per-meter `online`. Vrací se také původní chyby: po pádu procesu označí Last Will jako offline pouze první elektroměr; původní neplatná HDO metadata mohou opět bránit vytvoření HDO senzoru.
 
 ## Odstraňování problémů
 
@@ -207,8 +300,9 @@ HDO signály se fetchují přes **DIP API** (ne PND):
 | Symptom | Příčina | Log marker | Řešení |
 |---------|---------|------------|--------|
 | `302 Redirect` místo dat | Expirované cookies / chybí browser context | `SESSION_EXPIRED` | Auto-reauth, případně restart |
-| `400 Bad Request` z PND API | Chybný Content-Type (JSON místo form) | — | Interní chyba — viz WAF warmup flow |
-| HTML místo JSON odpovědi | WAF warmup selhal | — | Restart → warmup se opakuje |
+| `400 Bad Request` z PND API | Odmítnutý nebo neplatný požadavek | `CEZ_FETCH_ERROR` | Porovnejte s dostupností PND v prohlížeči |
+| HTML místo JSON odpovědi | Přihlašovací stránka, ochrana portálu nebo jiná HTML odpověď | `category: login / portal-protection / unrecognized-html` | Zkontrolujte kategorii v logu; HTML ani cookies se nelogují |
+| `500 Internal Server Error` z PND API | Interní chyba služby PND; nemusí jít o chybné heslo | `CEZ_FETCH_ERROR` | Ověřte PND v běžném prohlížeči; při stejné chybě vyčkejte nebo kontaktujte podporu ČEZ |
 | `hasData=false` pro všechny assembly | Žádná data pro dnešek | `NO_DATA_AVAILABLE` | Zkontrolujte PND portál ručně |
 | `Login failed` | Špatné přihlašovací údaje | — | Ověřte email/heslo na portálu |
 | CEZ portál údržba | Portál-wide výpadek (login stránka jako údržba) | `PORTAL_MAINTENANCE` | Čekejte na obnovení CEZ portálu |
@@ -272,7 +366,8 @@ HDO signály se fetchují přes **DIP API** (ne PND):
 
 **Řešení:**
 1. Ověřte na CEZ portálu, že data pro vaši odběrnou místo existují
-2. Zkontrolujte `electrometer_id` — auto-detekce vyžaduje alespoň jeden validní sloupec (+A, -A nebo Rv)
+2. Zkontrolujte `electrometer_id` — auto-detekce vyžaduje právě jeden elektroměr v seznamu PND. Po aktivaci PND může zpřístupnění dat trvat až pět pracovních dnů podle oznámení portálu.
+   Číselné hodnoty s oddělovači tisíců (např. `1 234,56`) doplněk podporuje. Pokud ČEZ pro konkrétní kanál vrací prázdné hodnoty nebo jej vůbec neposkytuje, senzor může zůstat `unknown`; chybějící data se nenahrazují nulou.
 3. Pro manuální nastavení ID elektroměru ho zadejte v konfiguraci add-onu
 4. Assembly `-1027` (registrové stavy) automaticky zkouší včerejší den pokud dnes nejsou data
 
@@ -281,15 +376,15 @@ HDO signály se fetchují přes **DIP API** (ne PND):
 ### Startup
 
 1. Add-on se spustí z Docker kontejneru (HA Supervisor)
-2. Přečte konfiguraci z env proměnných (`CEZ_EMAIL`, `CEZ_PASSWORD`, `MQTT_HOST`, ...)
-3. Vytvoří MQTT klienta s LWT (Last Will and Testament → `offline` při odpojení)
+2. Načte přihlašovací údaje ČEZ a MQTT konfiguraci ze Supervisoru (nebo z explicitního lokálního prostředí)
+3. Provede případnou detekci elektroměru, naváže potvrzené MQTT spojení a nastaví společné LWT (`offline` při odpojení)
 4. Spustí Orchestrator polling loop
 
 ### Polling cyklus (každých 15 minut)
 
 ```
 1. ensure_session()     → load cookies / Playwright login pokud expirované
-2. fetch_all_assemblies → 6× PND API call (Playwright WAF warmup + form POST)
+2. fetch_all_assemblies → 6× PND API call (Playwright WAF warmup + JSON POST)
 3. CezDataParser        → parse 96 čtvrthodinových záznamů → latest reading
 4. publish_state()      → 13 PND senzorů na MQTT
 5. fetch_hdo()          → DIP API token + signals (pokud EAN nastaven)
@@ -370,7 +465,7 @@ addon/
   config.yaml              # HA add-on konfigurace (arch, options, services)
   src/
     __init__.py
-    main.py                # Entry point, PndFetcher (Playwright WAF warmup + form POST)
+    main.py                # Entry point, PndFetcher (Playwright WAF warmup + JSON POST)
     auth.py                # Playwright autentizace (DIP login, iframe, cookies)
     session_manager.py     # Session persistence (6h TTL, /data/session_state.json)
     orchestrator.py        # Polling loop, 6 assemblies, retry, reauth, maintenance handling

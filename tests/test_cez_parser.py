@@ -128,6 +128,12 @@ class TestParseCzechDecimal:
     def test_integer_string(self):
         assert parse_czech_decimal("5") == 5.0
 
+    @pytest.mark.parametrize("separator", [" ", "\u00a0", "\u202f"])
+    @pytest.mark.parametrize("sign", ["", "-"])
+    def test_space_grouped_czech_numbers(self, separator, sign):
+        value = f"{sign}1{separator}234{separator}567,89"
+        assert parse_czech_decimal(value) == (-1234567.89 if sign else 1234567.89)
+
     def test_none_returns_none(self):
         assert parse_czech_decimal(None) is None
 

@@ -15,7 +15,7 @@ import json
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -135,7 +135,7 @@ class TestFullPipelineSmoke:
         mock_mqtt_client.publish.reset_mock()
         publisher.publish_discovery()
 
-        # Verify all 17 discovery topics published (13 PND + 4 HDO)
+        # Verify all 17 original sensor discovery topics remain (13 PND + 4 HDO)
         sensor_defs = get_sensor_definitions()
         hdo_defs = get_hdo_sensor_definitions()
         all_defs = sensor_defs + hdo_defs
@@ -147,7 +147,7 @@ class TestFullPipelineSmoke:
             matching = [
                 c
                 for c in mock_mqtt_client.publish.call_args_list
-                if c[0][0] == config_topic
+                if c[0][0] == config_topic and c[1].get("payload")
             ]
             assert len(matching) == 1, f"Discovery missing for {sensor.key}"
 
@@ -522,7 +522,7 @@ class TestFull17SensorPipeline:
             matching = [
                 c
                 for c in mock_mqtt_client.publish.call_args_list
-                if c[0][0] == config_topic
+                if c[0][0] == config_topic and c[1].get("payload")
             ]
             assert len(matching) == 1, f"Discovery missing for {sensor.key}"
 
@@ -542,7 +542,10 @@ class TestFull17SensorPipeline:
             mock_browser.is_connected.return_value = True
             store.set_live_context(mock_context, mock_browser)
             return AuthSession(
-                cookies=fake_cookies, reused=False, context=mock_context, browser=mock_browser
+                cookies=fake_cookies,
+                reused=False,
+                context=mock_context,
+                browser=mock_browser,
             )
 
         auth_client = PlaywrightAuthClient(creds, store, login_runner=fake_login)
@@ -609,7 +612,10 @@ class TestFull17SensorPipeline:
             mock_browser.is_connected.return_value = True
             store.set_live_context(mock_context, mock_browser)
             return AuthSession(
-                cookies=fake_cookies, reused=False, context=mock_context, browser=mock_browser
+                cookies=fake_cookies,
+                reused=False,
+                context=mock_context,
+                browser=mock_browser,
             )
 
         auth_client = PlaywrightAuthClient(creds, store, login_runner=fake_login)

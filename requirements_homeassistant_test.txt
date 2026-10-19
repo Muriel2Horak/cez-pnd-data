@@ -1,0 +1,8 @@
+# Isolated Home Assistant MQTT upgrade tests; Python 3.14 is required.
+homeassistant==2026.10.1
+paho-mqtt==2.1.0
+# MQTT config_flow imports hassio even when no Supervisor is running.
+aiohasupervisor==0.6.0
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.0.0

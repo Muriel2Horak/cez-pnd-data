@@ -43,16 +43,11 @@ PY
     fi
 }
 
-export CEZ_EMAIL="$(read_option email "")"
-export CEZ_PASSWORD="$(read_option password "")"
-export CEZ_ELECTROMETER_ID="$(read_option electrometer_id "")"
-export CEZ_EAN="$(read_option ean "")"
-export CEZ_ELECTROMETERS="$(read_option electrometers "[]")"
-
-export MQTT_HOST="${MQTT_HOST:-core-mosquitto}"
-export MQTT_PORT="${MQTT_PORT:-1883}"
-export MQTT_USER="${MQTT_USER:-}"
-export MQTT_PASSWORD="${MQTT_PASSWORD:-}"
+export CEZ_EMAIL="$(read_option email "${CEZ_EMAIL:-${CEZ_PND_EMAIL:-}}")"
+export CEZ_PASSWORD="$(read_option password "${CEZ_PASSWORD:-${CEZ_PND_PASSWORD:-}}")"
+export CEZ_ELECTROMETER_ID="$(read_option electrometer_id "${CEZ_ELECTROMETER_ID:-}")"
+export CEZ_EAN="$(read_option ean "${CEZ_EAN:-}")"
+export CEZ_ELECTROMETERS="$(read_option electrometers "${CEZ_ELECTROMETERS:-[]}")"
 
 if [[ -z "${CEZ_EMAIL}" || -z "${CEZ_PASSWORD}" ]]; then
     echo "Error: Missing required add-on options 'email' or 'password'." >&2
@@ -60,47 +55,7 @@ if [[ -z "${CEZ_EMAIL}" || -z "${CEZ_PASSWORD}" ]]; then
     exit 1
 fi
 
-wait_for_mqtt() {
-    local max_attempts=30
-    local attempt=1
-    local sleep_seconds=2
-
-    echo "Waiting for MQTT broker at ${MQTT_HOST}:${MQTT_PORT}..."
-    while (( attempt <= max_attempts )); do
-        if python3 - "$MQTT_HOST" "$MQTT_PORT" <<'PY'
-import socket
-import sys
-
-host = sys.argv[1]
-port = int(sys.argv[2])
-
-try:
-    with socket.create_connection((host, port), timeout=2):
-        pass
-except OSError:
-    raise SystemExit(1)
-
-raise SystemExit(0)
-PY
-        then
-            echo "MQTT broker is available."
-            return 0
-        fi
-        echo "MQTT not available yet (attempt ${attempt}/${max_attempts}), retrying in ${sleep_seconds}s..."
-        attempt=$((attempt + 1))
-        sleep "${sleep_seconds}"
-    done
-
-    echo "Error: MQTT broker at ${MQTT_HOST}:${MQTT_PORT} did not become available in time." >&2
-    return 1
-}
-
 echo "Starting CEZ PND add-on..."
-echo "Configuration loaded. Sensitive details are not printed to logs."
-echo "MQTT configuration is read from Supervisor-provided environment (mqtt:need)."
-
-wait_for_mqtt
-
-echo "Starting main application..."
+echo "MQTT settings will be resolved from Supervisor or explicit environment configuration."
 cd /app
 exec python3 -m src.main

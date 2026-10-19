@@ -29,7 +29,7 @@ class ParsedReading:
     # Tab 00: quarter-hour profiles
     consumption_kw: Optional[float] = None  # +A (active import)
     production_kw: Optional[float] = None  # -A (active export)
-    reactive_kw: Optional[float] = None  # Rv (reactive)
+    reactive_kw: Optional[float] = None  # Legacy name: Rv reserved power (kW)
     # Tab 03/04: reactive quadrant profiles
     reactive_import_inductive_kw: Optional[float] = None  # +Ri
     reactive_export_capacitive_kw: Optional[float] = None  # -Rc
@@ -62,13 +62,15 @@ _TIMESTAMP_PATTERN = re.compile(r"^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})$"
 def parse_czech_decimal(value: Optional[str]) -> Optional[float]:
     """Convert Czech decimal format string to float.
 
-    '1,42' -> 1.42, '0,0' -> 0.0.
+    '1,42' -> 1.42, '0,0' -> 0.0. Space thousands separators are ignored.
     Returns None for None, empty, or unparseable values.
     """
     if value is None or value == "":
         return None
     try:
-        return float(value.replace(",", "."))
+        # PND register readings use non-breaking spaces between digit groups.
+        normalized = value.replace(" ", "").replace("\u00a0", "").replace("\u202f", "")
+        return float(normalized.replace(",", "."))
     except (ValueError, AttributeError):
         return None
 
@@ -137,7 +139,7 @@ class CezDataParser:
         # Tab 00
         self.consumption_col_id: Optional[str] = None
         self.production_col_id: Optional[str] = None
-        self.reactive_col_id: Optional[str] = None
+        self.reactive_col_id: Optional[str] = None  # Legacy name for Rv reserved power
         # Tab 03/04
         self.reactive_import_inductive_col_id: Optional[str] = None
         self.reactive_export_capacitive_col_id: Optional[str] = None
@@ -295,6 +297,7 @@ class CezDataParser:
         """Return the latest reading as a flat dict for MQTT publishing.
 
         Returns None if no readings are available.
+        The legacy key ``reactive_kw`` carries Rv reserved power in kW.
         """
         latest = self.get_latest_reading()
         if latest is None:

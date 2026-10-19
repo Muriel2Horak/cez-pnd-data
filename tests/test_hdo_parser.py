@@ -10,6 +10,7 @@ Covers:
 from __future__ import annotations
 
 from datetime import datetime, time
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -50,6 +51,79 @@ FAKE_HDO_DATA_FULL = {
 }
 
 
+@pytest.mark.parametrize("interleaved", [False, True])
+def test_multiple_signal_channels_follow_portal_default_without_combining(interleaved):
+    primary = [
+        {"signal": "TEST|1", "datum": "19.10.2026", "casy": "00:00-08:00;20:00-24:00"},
+        {"signal": "TEST|1", "datum": "20.10.2026", "casy": "00:00-06:00"},
+    ]
+    secondary = [
+        {"signal": "TEST|2", "datum": "19.10.2026", "casy": "00:00-24:00"},
+        {"signal": "TEST|3", "datum": "19.10.2026", "casy": "12:00-14:00"},
+        {"signal": "TEST|2", "datum": "20.10.2026", "casy": "00:00-24:00"},
+    ]
+    signals = (
+        [primary[0], *secondary, primary[1]] if interleaved else primary + secondary
+    )
+    now = datetime(2026, 10, 19, 12)
+    result = parse_hdo_signals({"signals": signals}, now=now)
+    assert result == parse_hdo_signals({"signals": primary}, now=now)
+    assert result.signal_name == "TEST|1"
+    assert result.is_low_tariff is False
+    assert result.next_switch == datetime(
+        2026, 10, 19, 20, tzinfo=ZoneInfo("Europe/Prague")
+    )
+    late = parse_hdo_signals({"signals": signals}, now=datetime(2026, 10, 19, 23))
+    assert late.next_switch == datetime(
+        2026, 10, 20, 6, tzinfo=ZoneInfo("Europe/Prague")
+    )
+
+
+def test_first_signal_is_not_assumed_to_have_a_specific_suffix():
+    result = parse_hdo_signals(
+        {
+            "signals": [
+                {"signal": "OTHER", "datum": "19.10.2026", "casy": "00:00-08:00"},
+                {"signal": "TEST|1", "datum": "19.10.2026", "casy": "00:00-24:00"},
+            ]
+        },
+        now=datetime(2026, 10, 19, 12),
+    )
+    assert result.signal_name == "OTHER"
+    assert result.is_low_tariff is False
+
+
+def test_missing_selected_date_does_not_fall_back_to_another_channel():
+    result = parse_hdo_signals(
+        {
+            "signals": [
+                {"signal": "TEST|1", "datum": "18.10.2026", "casy": "00:00-24:00"},
+                {"signal": "TEST|2", "datum": "19.10.2026", "casy": "00:00-24:00"},
+            ]
+        },
+        now=datetime(2026, 10, 19, 12),
+    )
+    assert result.is_low_tariff is None
+    assert result.next_switch is None
+
+
+def test_identical_duplicate_selected_schedule_is_accepted():
+    entry = {"signal": "TEST", "datum": "19.10.2026", "casy": "00:00-08:00"}
+    now = datetime(2026, 10, 19, 7)
+    assert parse_hdo_signals(
+        {"signals": [entry, dict(entry)]}, now=now
+    ) == parse_hdo_signals({"signals": [entry]}, now=now)
+
+
+def test_conflicting_duplicate_selected_schedule_is_rejected():
+    entry = {"signal": "TEST", "datum": "19.10.2026", "casy": "00:00-08:00"}
+    with pytest.raises(ValueError, match="Ambiguous"):
+        parse_hdo_signals(
+            {"signals": [entry, dict(entry, casy="00:00-24:00")]},
+            now=datetime(2026, 10, 19, 12),
+        )
+
+
 # ── Time range parsing ────────────────────────────────────────────────
 
 
@@ -80,11 +154,9 @@ class TestParseTimeRanges:
         result = _parse_time_ranges("")
         assert result == []
 
-    def test_skips_malformed_entries(self) -> None:
-        result = _parse_time_ranges("06:00-22:00;INVALID;23:00-24:00")
-        assert len(result) == 2
-        assert result[0] == ("06:00", "22:00")
-        assert result[1] == ("23:00", "24:00")
+    def test_rejects_malformed_entries(self) -> None:
+        with pytest.raises(ValueError):
+            _parse_time_ranges("06:00-22:00;INVALID;23:00-24:00")
 
 
 # ── Time string parsing ──────────────────────────────────────────────
@@ -177,42 +249,42 @@ class TestFindNextSwitch:
     ]
 
     def test_at_0300_next_switch_is_0800(self) -> None:
-        now = datetime(2026, 2, 15, 3, 0)
+        now = datetime(2026, 2, 15, 3, 0, tzinfo=ZoneInfo("Europe/Prague"))
         result = _find_next_switch(now, self.SCHEDULE)
-        assert result == datetime(2026, 2, 15, 8, 0)
+        assert result == datetime(2026, 2, 15, 8, 0, tzinfo=ZoneInfo("Europe/Prague"))
 
     def test_at_0830_next_switch_is_0900(self) -> None:
-        now = datetime(2026, 2, 15, 8, 30)
+        now = datetime(2026, 2, 15, 8, 30, tzinfo=ZoneInfo("Europe/Prague"))
         result = _find_next_switch(now, self.SCHEDULE)
-        assert result == datetime(2026, 2, 15, 9, 0)
+        assert result == datetime(2026, 2, 15, 9, 0, tzinfo=ZoneInfo("Europe/Prague"))
 
     def test_at_1230_next_switch_is_1300(self) -> None:
-        now = datetime(2026, 2, 15, 12, 30)
+        now = datetime(2026, 2, 15, 12, 30, tzinfo=ZoneInfo("Europe/Prague"))
         result = _find_next_switch(now, self.SCHEDULE)
-        assert result == datetime(2026, 2, 15, 13, 0)
+        assert result == datetime(2026, 2, 15, 13, 0, tzinfo=ZoneInfo("Europe/Prague"))
 
     def test_at_1930_next_switch_is_2000(self) -> None:
-        now = datetime(2026, 2, 15, 19, 30)
+        now = datetime(2026, 2, 15, 19, 30, tzinfo=ZoneInfo("Europe/Prague"))
         result = _find_next_switch(now, self.SCHEDULE)
-        assert result == datetime(2026, 2, 15, 20, 0)
+        assert result == datetime(2026, 2, 15, 20, 0, tzinfo=ZoneInfo("Europe/Prague"))
 
-    def test_at_2200_wraps_to_next_day(self) -> None:
+    def test_at_2200_does_not_invent_tomorrow(self) -> None:
         """After last boundary (20:00), next is 00:00 tomorrow (first boundary)."""
-        now = datetime(2026, 2, 15, 22, 0)
+        now = datetime(2026, 2, 15, 22, 0, tzinfo=ZoneInfo("Europe/Prague"))
         result = _find_next_switch(now, self.SCHEDULE)
-        assert result == datetime(2026, 2, 16, 0, 0)
+        assert result is None
 
     def test_at_0000_next_switch_is_0800(self) -> None:
         """At exact midnight, next boundary after 00:00 is 08:00."""
-        now = datetime(2026, 2, 15, 0, 0)
+        now = datetime(2026, 2, 15, 0, 0, tzinfo=ZoneInfo("Europe/Prague"))
         result = _find_next_switch(now, self.SCHEDULE)
-        assert result == datetime(2026, 2, 15, 8, 0)
+        assert result == datetime(2026, 2, 15, 8, 0, tzinfo=ZoneInfo("Europe/Prague"))
 
-    def test_empty_schedule_returns_next_day_midnight(self) -> None:
+    def test_empty_schedule_has_no_known_switch(self) -> None:
         """When schedule is empty (no valid slots), return next day at midnight."""
-        now = datetime(2026, 2, 15, 10, 0)
+        now = datetime(2026, 2, 15, 10, 0, tzinfo=ZoneInfo("Europe/Prague"))
         result = _find_next_switch(now, [])
-        assert result == datetime(2026, 2, 16, 0, 0)
+        assert result is None
 
 
 # ── Full parse_hdo_signals ────────────────────────────────────────────
@@ -222,17 +294,17 @@ class TestParseHdoSignals:
     """Verify end-to-end HDO signal parsing."""
 
     def test_returns_hdo_data_instance(self) -> None:
-        now = datetime(2026, 2, 15, 10, 0)
+        now = datetime(2026, 2, 15, 10, 0, tzinfo=ZoneInfo("Europe/Prague"))
         result = parse_hdo_signals(FAKE_HDO_DATA, now=now)
         assert isinstance(result, HdoData)
 
     def test_signal_name_extracted(self) -> None:
-        now = datetime(2026, 2, 15, 10, 0)
+        now = datetime(2026, 2, 15, 10, 0, tzinfo=ZoneInfo("Europe/Prague"))
         result = parse_hdo_signals(FAKE_HDO_DATA, now=now)
         assert result.signal_name == "EVV2"
 
     def test_schedule_parsed_correctly(self) -> None:
-        now = datetime(2026, 2, 15, 10, 0)
+        now = datetime(2026, 2, 15, 10, 0, tzinfo=ZoneInfo("Europe/Prague"))
         result = parse_hdo_signals(FAKE_HDO_DATA, now=now)
         assert result.today_schedule == [
             ("00:00", "08:00"),
@@ -244,33 +316,37 @@ class TestParseHdoSignals:
 
     def test_low_tariff_during_window(self) -> None:
         """10:00 is within 09:00-12:00 → low tariff."""
-        now = datetime(2026, 2, 15, 10, 0)
+        now = datetime(2026, 2, 15, 10, 0, tzinfo=ZoneInfo("Europe/Prague"))
         result = parse_hdo_signals(FAKE_HDO_DATA, now=now)
         assert result.is_low_tariff is True
 
     def test_high_tariff_outside_window(self) -> None:
         """08:30 is between 08:00 and 09:00 → high tariff."""
-        now = datetime(2026, 2, 15, 8, 30)
+        now = datetime(2026, 2, 15, 8, 30, tzinfo=ZoneInfo("Europe/Prague"))
         result = parse_hdo_signals(FAKE_HDO_DATA, now=now)
         assert result.is_low_tariff is False
 
     def test_next_switch_calculated(self) -> None:
-        now = datetime(2026, 2, 15, 10, 0)
+        now = datetime(2026, 2, 15, 10, 0, tzinfo=ZoneInfo("Europe/Prague"))
         result = parse_hdo_signals(FAKE_HDO_DATA, now=now)
-        assert result.next_switch == datetime(2026, 2, 15, 12, 0)
+        assert result.next_switch == datetime(
+            2026, 2, 15, 12, 0, tzinfo=ZoneInfo("Europe/Prague")
+        )
 
     def test_next_switch_during_high_tariff(self) -> None:
-        now = datetime(2026, 2, 15, 8, 30)
+        now = datetime(2026, 2, 15, 8, 30, tzinfo=ZoneInfo("Europe/Prague"))
         result = parse_hdo_signals(FAKE_HDO_DATA, now=now)
-        assert result.next_switch == datetime(2026, 2, 15, 9, 0)
+        assert result.next_switch == datetime(
+            2026, 2, 15, 9, 0, tzinfo=ZoneInfo("Europe/Prague")
+        )
 
     def test_is_low_tariff_is_bool(self) -> None:
-        now = datetime(2026, 2, 15, 10, 0)
+        now = datetime(2026, 2, 15, 10, 0, tzinfo=ZoneInfo("Europe/Prague"))
         result = parse_hdo_signals(FAKE_HDO_DATA, now=now)
         assert isinstance(result.is_low_tariff, bool)
 
     def test_next_switch_is_datetime(self) -> None:
-        now = datetime(2026, 2, 15, 10, 0)
+        now = datetime(2026, 2, 15, 10, 0, tzinfo=ZoneInfo("Europe/Prague"))
         result = parse_hdo_signals(FAKE_HDO_DATA, now=now)
         assert isinstance(result.next_switch, datetime)
 
@@ -284,12 +360,13 @@ class TestParseHdoSignals:
 
     def test_raises_on_empty_casy(self) -> None:
         data = {"signals": [{"signal": "EVV2", "casy": ""}]}
-        with pytest.raises(ValueError, match="No time schedule"):
-            parse_hdo_signals(data)
+        result = parse_hdo_signals(data)
+        assert result.is_low_tariff is None
+        assert result.next_switch is None
 
     def test_works_with_nested_data_structure(self) -> None:
         """parse_hdo_signals takes the 'data' portion, not the full response."""
-        now = datetime(2026, 2, 15, 10, 0)
+        now = datetime(2026, 2, 15, 10, 0, tzinfo=ZoneInfo("Europe/Prague"))
         result = parse_hdo_signals(FAKE_HDO_DATA_FULL["data"], now=now)
         assert result.signal_name == "EVV2"
         assert result.is_low_tariff is True
@@ -304,7 +381,7 @@ class TestHdoDataImmutability:
     def test_cannot_modify_fields(self) -> None:
         data = HdoData(
             is_low_tariff=True,
-            next_switch=datetime(2026, 2, 15, 12, 0),
+            next_switch=datetime(2026, 2, 15, 12, 0, tzinfo=ZoneInfo("Europe/Prague")),
             today_schedule=[("00:00", "08:00")],
             signal_name="EVV2",
         )

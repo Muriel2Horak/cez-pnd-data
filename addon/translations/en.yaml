@@ -1,0 +1,19 @@
+configuration:
+  electrometer_id:
+    name: Meter ID
+    description: >-
+      Identifies the physical meter for PND readings. This is different from
+      the supply point EAN. Leave empty for automatic detection and enter the
+      EAN for HDO separately.
+  ean:
+    name: Supply point EAN (for HDO)
+    description: >-
+      Find the EAN on your bill or in the ČEZ portal. It is different from the
+      meter ID and is not detected automatically. Without an EAN, HDO sensors
+      stay unknown; PND readings continue to work.
+  electrometers:
+    name: Meter list (JSON)
+    description: >-
+      For multiple meters, enter a JSON list with electrometer_id and ean for
+      each meter. This list takes precedence over the separate Meter ID and
+      EAN fields.

@@ -84,17 +84,17 @@ class TestSensorDefinitions:
             assert d.device_class, f"sensor {d.key} missing device_class"
 
     def test_power_sensors_use_kw_unit(self) -> None:
-        """Original power sensors (consumption, production) use kW."""
+        """Consumption, production and reserved power use kW and power class."""
         defs = {d.key: d for d in get_sensor_definitions()}
-        for key in ("consumption", "production"):
+        for key in ("consumption", "production", "reactive"):
             assert defs[key].unit_of_measurement == "kW", f"{key} should use kW"
             assert defs[key].device_class == "power", f"{key} should be power"
             assert (
                 defs[key].state_class == "measurement"
             ), f"{key} should be measurement"
 
-    def test_reactive_power_sensors_use_var_unit(self) -> None:
-        """All reactive power sensors (4 new + original) use var and reactive_power device_class."""
+    def test_reactive_power_sensors_use_kvar_unit(self) -> None:
+        """The four detailed reactive channels use kvar and reactive_power."""
         defs = {d.key: d for d in get_sensor_definitions()}
         reactive_keys = [
             "reactive_import_inductive",
@@ -103,7 +103,7 @@ class TestSensorDefinitions:
             "reactive_import_capacitive",
         ]
         for key in reactive_keys:
-            assert defs[key].unit_of_measurement == "var", f"{key} should use var"
+            assert defs[key].unit_of_measurement == "kvar", f"{key} should use kvar"
             assert (
                 defs[key].device_class == "reactive_power"
             ), f"{key} should be reactive_power"
@@ -130,7 +130,7 @@ class TestSensorDefinitions:
             ), f"{key} should be total_increasing"
 
     def test_existing_three_sensors_unchanged(self) -> None:
-        """Original 3 sensors must keep their exact definitions."""
+        """Keep original identities and units, correcting invalid Rv metadata."""
         defs = {d.key: d for d in get_sensor_definitions()}
         # consumption
         assert defs["consumption"].name == "CEZ {id} Consumption Power / Odběr"
@@ -142,10 +142,10 @@ class TestSensorDefinitions:
         assert defs["production"].unit_of_measurement == "kW"
         assert defs["production"].device_class == "power"
         assert defs["production"].icon == "mdi:solar-power"
-        # reactive (original — keeps kW for backward compat)
-        assert defs["reactive"].name == "CEZ {id} Reactive Power / Jalový výkon"
+        # The legacy reactive key actually represents Rv reserved power.
+        assert defs["reactive"].name == "CEZ {id} Reserved Power / Rezervovaný výkon"
         assert defs["reactive"].unit_of_measurement == "kW"
-        assert defs["reactive"].device_class == "reactive_power"
+        assert defs["reactive"].device_class == "power"
         assert defs["reactive"].icon == "mdi:sine-wave"
 
     def test_valid_sensor_keys_matches_definitions(self) -> None:
@@ -219,10 +219,14 @@ class TestDiscoveryPayload:
             deserialized = json.loads(serialized)
             assert deserialized == payload
 
-    def test_reactive_sensor_uses_var_unit(self) -> None:
+    def test_original_reactive_sensor_preserves_source_unit_and_identity(self) -> None:
         payload = self._payload_for("reactive")
         assert payload["unit_of_measurement"] == "kW"
-        assert payload["device_class"] == "reactive_power"
+        assert payload["device_class"] == "power"
+        assert payload["name"] == f"CEZ {METER_ID} Reserved Power / Rezervovaný výkon"
+        assert payload["unique_id"] == f"cez_pnd_{METER_ID}_reactive"
+        assert payload["state_topic"] == f"cez_pnd/{METER_ID}/reactive/state"
+        assert payload["state_class"] == "measurement"
 
     def test_production_sensor_config(self) -> None:
         payload = self._payload_for("production")
@@ -248,7 +252,7 @@ class TestTopicNaming:
         assert actual == expected
 
     def test_availability_topic_format(self) -> None:
-        expected = f"cez_pnd/{METER_ID}/availability"
+        expected = "cez_pnd/availability"
         actual = AVAILABILITY_TOPIC_TEMPLATE.format(electrometer_id=METER_ID)
         assert actual == expected
 
@@ -334,7 +338,7 @@ class TestDiscoveryPublishing:
 
         for c in mock_mqtt_client.publish.call_args_list:
             topic = c[0][0]
-            if "/config" in topic:
+            if "/config" in topic and c[1].get("payload"):
                 retain = c[1].get("retain", False)
                 assert retain is True, f"discovery to {topic} must be retained"
 
@@ -344,22 +348,24 @@ class TestDiscoveryPublishing:
 
         for c in mock_mqtt_client.publish.call_args_list:
             topic = c[0][0]
-            if "/config" in topic:
+            if "/config" in topic and c[1].get("payload"):
                 payload_str = c[0][1] if len(c[0]) > 1 else c[1].get("payload")
                 parsed = json.loads(payload_str)
                 assert "unique_id" in parsed
                 assert "state_topic" in parsed
 
-    def test_discovery_publishes_exactly_thirteen_configs(
+    def test_discovery_publishes_eighteen_configs(
         self, mock_mqtt_client: MagicMock
     ) -> None:
         publisher = MqttPublisher(client=mock_mqtt_client, electrometer_id=METER_ID)
         publisher.publish_discovery()
 
         config_calls = [
-            c for c in mock_mqtt_client.publish.call_args_list if "/config" in c[0][0]
+            c
+            for c in mock_mqtt_client.publish.call_args_list
+            if "/config" in c[0][0] and c[1].get("payload")
         ]
-        assert len(config_calls) == 17
+        assert len(config_calls) == 18
 
 
 # ── State publishing ──────────────────────────────────────────────────
@@ -521,11 +527,11 @@ class TestIdentityUniqueness:
         }
         assert topics_a.isdisjoint(topics_b), f"Collision: {topics_a & topics_b}"
 
-    def test_availability_topics_differ_across_meters(self) -> None:
-        """Availability topics for two meters are distinct."""
+    def test_availability_topic_shared_across_meters(self) -> None:
+        """All meters use the same connection availability topic."""
         avail_a = AVAILABILITY_TOPIC_TEMPLATE.format(electrometer_id=METER_A)
         avail_b = AVAILABILITY_TOPIC_TEMPLATE.format(electrometer_id=METER_B)
-        assert avail_a != avail_b
+        assert avail_a == avail_b == "cez_pnd/availability"
 
     def test_device_identifiers_differ_across_meters(self) -> None:
         """Device block identifiers are unique per electrometer."""
@@ -702,14 +708,14 @@ class TestMultiElectrometerPublisher:
         config_topics = [
             c[0][0]
             for c in mock_mqtt_client.publish.call_args_list
-            if "/config" in c[0][0]
+            if "/config" in c[0][0] and c[1].get("payload")
         ]
 
         meter_1_topics = [t for t in config_topics if "784703" in t]
         meter_2_topics = [t for t in config_topics if "784704" in t]
 
-        assert len(meter_1_topics) == 17
-        assert len(meter_2_topics) == 17
+        assert len(meter_1_topics) == 18
+        assert len(meter_2_topics) == 18
 
     def test_publisher_can_publish_for_multiple_meters(
         self,
@@ -727,7 +733,7 @@ class TestMultiElectrometerPublisher:
         config_topics = [
             c[0][0]
             for c in mock_mqtt_client.publish.call_args_list
-            if "/config" in c[0][0]
+            if "/config" in c[0][0] and c[1].get("payload")
         ]
 
         meter_1_topics = [
@@ -744,7 +750,7 @@ class TestMultiElectrometerPublisher:
         assert len(meter_1_topics) > 0, "Meter 1 should have discovery topics"
         assert len(meter_2_topics) > 0, "Meter 2 should have discovery topics"
 
-    def test_availability_topics_distinct_per_meter(
+    def test_availability_topic_shared_per_connection(
         self,
         mock_mqtt_client: MagicMock,
         multi_meter_publisher_configs: list[dict[str, str]],
@@ -758,8 +764,8 @@ class TestMultiElectrometerPublisher:
             avail_topics.append(expected_topic)
 
         assert (
-            avail_topics[0] != avail_topics[1]
-        ), f"Availability topics must be distinct: {avail_topics}"
+            avail_topics[0] == avail_topics[1] == "cez_pnd/availability"
+        ), f"Availability topic must be shared: {avail_topics}"
 
     def test_start_publishes_online_for_all_meters(
         self,
@@ -879,7 +885,7 @@ class TestMultiElectrometerPublisher:
         config_calls = [
             c
             for c in mock_mqtt_client.publish.call_args_list
-            if "/config" in c[0][0] and "784703" in c[0][0]
+            if "/config" in c[0][0] and c[1].get("payload") and "784703" in c[0][0]
         ]
         payload = json.loads(config_calls[0][1]["payload"])
         assert "configuration_url" in payload["device"]
@@ -899,13 +905,13 @@ class TestMultiElectrometerPublisher:
         hdo_config_calls = [
             c
             for c in mock_mqtt_client.publish.call_args_list
-            if "/config" in c[0][0] and "hdo" in c[0][0]
+            if "/config" in c[0][0] and c[1].get("payload") and "hdo" in c[0][0]
         ]
         meter_1_hdo = [c for c in hdo_config_calls if "784703" in c[0][0]]
         meter_2_hdo = [c for c in hdo_config_calls if "784704" in c[0][0]]
 
-        assert len(meter_1_hdo) == 4
-        assert len(meter_2_hdo) == 4
+        assert len(meter_1_hdo) == 5
+        assert len(meter_2_hdo) == 5
 
     def test_constructor_requires_electrometers_or_electrometer_id(
         self, mock_mqtt_client: MagicMock
